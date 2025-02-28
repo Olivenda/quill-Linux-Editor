@@ -13,12 +13,6 @@ This project is licensed under the [MIT License](LICENSE), with the following co
 
 3. **Open-Source**: You may modify, distribute, and use this template as long as you adhere to the above conditions.
 
-## How to Use
-
-1. Clone the repository to your local machine:
-
-   ```bash
-     git clone https://github.com/yourusername/repository.git
 
    
 For any questions or inquiries, feel free to reach out to Olivenda via [Priviliq5@gmail.com].

@@ -15,15 +15,11 @@ This project is licensed under the [MIT License](LICENSE), with the following co
 
 ## Launching the Editor
 
-1. Extract the provided `quill.tar` archive:
+1. Compile the editor using the provided `Makefile`:
    ```bash
-   tar -xvf quill.tar
+   make
    ```
-2. Compile the editor:
-   ```bash
-   g++ -o quill quill/editor.cpp
-   ```
-3. Run the editor with the file you want to edit:
+2. Run the editor with the file you want to edit:
    ```bash
    ./quill <filename>
    ```
@@ -49,5 +45,4 @@ For any questions or inquiries, feel free to reach out to Olivenda via [Priviliq
 © 2025 Olivenda. All Rights Reserved.
 
 ## Build
-1. Extract the sources with `tar xf quill.tar`.
-2. Run `make quill` to compile the editor.
+Run `make` to compile the editor. The source code is located in the `src/` directory.

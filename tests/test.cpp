@@ -62,7 +62,7 @@ inline void init_pair(short,short,short){}
 
 // Use the actual implementations but avoid main definition
 #define main quill_main
-#include "quill/editor.cpp"
+#include "../src/editor.cpp"
 #undef main
 
 int main() {

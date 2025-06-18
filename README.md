@@ -17,3 +17,7 @@ This project is licensed under the [MIT License](LICENSE), with the following co
    
 For any questions or inquiries, feel free to reach out to Olivenda via [Priviliq5@gmail.com].
 © 2025 Olivenda. All Rights Reserved.
+
+## Build
+1. Extract the sources with `tar xf quill.tar`.
+2. Run `make quill` to compile the editor.

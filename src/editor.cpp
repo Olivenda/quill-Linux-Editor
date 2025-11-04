@@ -175,59 +175,6 @@ bool searchInLines(const vector<string>& lines, const string& query, int& row, i
         }
     }
     return false;
-}
-
-bool gotoLine(int& row, int& col, int max_row, int lines_size) {
-    // Note: signature kept for compatibility; promptInput expects max_col so reuse the value.
-    int max_col = max_row;
-    if (lines_size <= 0) return false;
-
-    string input = promptInput("Goto line (line[:col]): ", max_col);
-    auto trim = [](string &s) {
-        size_t a = s.find_first_not_of(" \t\r\n");
-        size_t b = s.find_last_not_of(" \t\r\n");
-        if (a == string::npos) { s.clear(); return; }
-        s = s.substr(a, b - a + 1);
-    };
-    trim(input);
-    if (input.empty()) return false;
-
-    // support formats: "123" or "123:45" or "123,45"
-    for (auto &c : input) if (c == ',') c = ':';
-    size_t sep = input.find(':');
-    string linePart = (sep == string::npos) ? input : input.substr(0, sep);
-    string colPart = (sep == string::npos) ? "" : input.substr(sep + 1);
-
-    try {
-        int ln = stoi(linePart);
-        if (ln < 1 || ln > lines_size) {
-            beep();
-            return false;
-        }
-        int newCol = 0;
-        if (!colPart.empty()) {
-            trim(colPart);
-            if (!colPart.empty()) {
-                newCol = stoi(colPart);
-                if (newCol < 0) newCol = 0;
-            }
-        }
-        row = ln - 1;
-        col = newCol;
-        return true;
-    } catch (...) {
-        beep();
-        return false;
-    }
-}
-
-#include <map>
-
-void initSyntaxColors() {
-    init_pair(3, COLOR_YELLOW, COLOR_BLACK);
-    init_pair(4, COLOR_MAGENTA, COLOR_BLACK);
-    init_pair(5, COLOR_GREEN, COLOR_BLACK);
-    init_pair(6, COLOR_BLUE, COLOR_BLACK);
     init_pair(7, COLOR_RED, COLOR_BLACK);
     init_pair(8, COLOR_CYAN, COLOR_BLACK);
 }
@@ -335,7 +282,6 @@ void nanoEditor(const string& filename) {
 
     init_pair(1, COLOR_CYAN, COLOR_BLACK);
     init_pair(2, COLOR_WHITE, COLOR_BLACK);
-    initSyntaxColors();
 
     int max_row, max_col;
     getmaxyx(stdscr, max_row, max_col);
@@ -407,37 +353,68 @@ void nanoEditor(const string& filename) {
         }
 
         switch (ch) {
-            case KEY_UP:
-                if (row > 0) row--;
-                if (col > lines[row].size()) col = lines[row].size();
-                break;
-            case KEY_DOWN:
-                if (row < (int)lines.size() - 1) row++;
-                if (col > lines[row].size()) col = lines[row].size();
-                break;
+            case KEY_UP: {
+            if (row > 0) row--;
+            if (col > (int)lines[row].size()) col = lines[row].size();
+            
+            {
+                int half = std::max(1, max_row / 2);
+                scroll_offset = std::max(0, std::min((int)lines.size() - 1, row - half));
+            }
+            break;
+            }
+            case KEY_DOWN: {
+            if (row < (int)lines.size() - 1) row++;
+            if (col > (int)lines[row].size()) col = lines[row].size();
+            {
+                int half = std::max(1, max_row / 2);
+                scroll_offset = std::max(0, std::min((int)lines.size() - 1, row - half));
+            }
+            break;
+            }
             case KEY_LEFT:
-                if (col > 0) col--;
-                else if (row > 0) { row--; col = lines[row].size(); }
-                break;
+            if (col > 0) {
+                col--;
+            } else if (row > 0) {
+                
+                row--;
+                col = lines[row].size();
+                if (row < scroll_offset) scroll_offset = std::max(0, row);
+            }
+            break;
             case KEY_RIGHT:
-                if (col < lines[row].size()) col++;
-                else if (row < (int)lines.size() - 1) { row++; col = 0; }
-                break;
+            if (col < (int)lines[row].size()) {
+                col++;
+            } else if (row < (int)lines.size() - 1) {
+                row++;
+                col = 0;
+                if (row - scroll_offset >= max_row - 1)
+                scroll_offset = std::max(0, row - (max_row - 2));
+            }
+            break;
+            case KEY_HOME:
+            col = 0;
+            break;
+            case KEY_END:
+            col = lines[row].size();
+            break;
             case KEY_BACKSPACE:
             case 127:
             case 8:
-                if (col > 0) {
-                    lines[row].erase(col - 1, 1);
-                    col--;
-                    modified = true;
-                } else if (row > 0) {
-                    col = lines[row - 1].size();
-                    lines[row - 1] += lines[row];
-                    lines.erase(lines.begin() + row);
-                    row--;
-                    modified = true;
-                }
-                break;
+            if (col > 0) {
+                lines[row].erase(col - 1, 1);
+                col--;
+                modified = true;
+            } else if (row > 0) {
+                int prev_len = lines[row - 1].size();
+                lines[row - 1] += lines[row];
+                lines.erase(lines.begin() + row);
+                row--;
+                col = prev_len;
+                if (row < scroll_offset) scroll_offset = std::max(0, row);
+                modified = true;
+            }
+            break;
             case '\n':
                 lines.insert(lines.begin() + row + 1, lines[row].substr(col));
                 lines[row] = lines[row].substr(0, col);
@@ -483,8 +460,19 @@ void nanoEditor(const string& filename) {
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         cout << "Usage: quill <filename>" << endl;
+        cout << "       quill uninstall    (uninstalls quill)" << endl;
         return 1;
     }
+    
+    if (string(argv[1]) == "uninstall") {
+        system("rm -f /usr/local/bin/quill");
+        cout << "Quill has been uninstalled." << endl;
+        return 0;
+    }
+    
+
+
+
     string filename = argv[1];
     nanoEditor(filename);
     return 0;

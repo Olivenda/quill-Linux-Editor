@@ -2,6 +2,7 @@
 #include <fstream>
 #include <vector>
 #include <string>
+#include <algorithm>
 #include <ncurses.h>
 #ifdef KEY_SAVE
 #undef KEY_SAVE
@@ -28,24 +29,76 @@ vector<string> loadFile(const string& filename) {
 #include <map>
 
 map<string, int> keyword_colors = {
-    {"int", 3}, {"float", 3}, {"double", 3}, {"char", 3}, {"void", 3},
-    {"short", 3}, {"long", 3}, {"signed", 3}, {"unsigned", 3},
-    {"bool", 3}, {"wchar_t", 3}, {"size_t", 3}, {"auto", 3},
-    {"const", 3}, {"static", 3}, {"mutable", 3}, {"volatile", 3},
-    {"constexpr", 3}, {"inline", 3}, {"typedef", 3}, {"enum", 3},
-    {"if", 4}, {"else", 4}, {"for", 4}, {"while", 4}, {"do", 4},
-    {"return", 4}, {"switch", 4}, {"case", 4}, {"break", 4},
-    {"continue", 4}, {"goto", 4}, {"default", 4},
-    {"try", 4}, {"catch", 4}, {"throw", 4},
-    {"class", 5}, {"struct", 5}, {"union", 5}, {"public", 5},
-    {"private", 5}, {"protected", 5}, {"virtual", 5}, {"override", 5},
-    {"final", 5}, {"explicit", 5}, {"friend", 5}, {"template", 5},
-    {"typename", 5}, {"operator", 5}, {"namespace", 5}, {"using", 5},
-    {"include", 6}, {"define", 6}, {"ifdef", 6}, {"ifndef", 6},
-    {"endif", 6}, {"pragma", 6}, {"undef", 6}, {"elif", 6},
-    {"new", 4}, {"delete", 4}, {"this", 4}, {"nullptr", 3},
+    
+    {"void", 3}, {"bool", 3}, {"char", 3}, {"wchar_t", 3}, {"char16_t", 3}, {"char32_t", 3},
+    {"signed", 3}, {"unsigned", 3}, {"short", 3}, {"long", 3}, {"int", 3}, {"float", 3}, {"double", 3},
+    {"nullptr", 3}, {"size_t", 3}, {"ptrdiff_t", 3}, {"int8_t", 3}, {"int16_t", 3}, {"int32_t", 3}, {"int64_t", 3},
+    {"uint8_t", 3}, {"uint16_t", 3}, {"uint32_t", 3}, {"uint64_t", 3},
+
+    
+    {"static", 3}, {"extern", 3}, {"register", 3}, {"thread_local", 3}, {"mutable", 3},
+    {"const", 3}, {"volatile", 3}, {"constexpr", 3}, {"inline", 3}, {"typedef", 3}, {"using", 5},
+
+    
+    {"if", 4}, {"else", 4}, {"switch", 4}, {"case", 4}, {"default", 4},
+    {"for", 4}, {"while", 4}, {"do", 4}, {"break", 4}, {"continue", 4}, {"goto", 4},
+    {"return", 4},
+
+    
+    {"try", 4}, {"catch", 4}, {"throw", 4}, {"noexcept", 4}, {"throw", 4},
+
+    {"namespace", 5}, {"using", 5},
+    {"class", 5}, {"struct", 5}, {"union", 5}, {"enum", 5}, {"namespace", 5},
+    {"public", 5}, {"private", 5}, {"protected", 5}, {"virtual", 5}, {"override", 5}, {"final", 5},
+    {"explicit", 5}, {"friend", 5}, {"typename", 5}, {"template", 5}, {"operator", 5},
+
+   
     {"static_cast", 3}, {"dynamic_cast", 3}, {"reinterpret_cast", 3}, {"const_cast", 3},
-    {"main", 5}
+    {"typeid", 3}, {"decltype", 3}, {"sizeof", 3}, {"alignof", 3}, {"offsetof", 3},
+
+    
+    {"new", 4}, {"delete", 4}, {"malloc", 6}, {"calloc", 6}, {"realloc", 6}, {"free", 6},
+    {"std::move", 5}, {"std::forward", 5},
+
+    
+    {"main", 5}, {"printf", 6}, {"scanf", 6}, {"fprintf", 6}, {"sprintf", 6},
+    {"puts", 6}, {"gets", 6}, {"fopen", 6}, {"fclose", 6}, {"fread", 6}, {"fwrite", 6},
+
+    
+    {"std::string", 5}, {"string", 5}, {"vector", 6}, {"std::vector", 6}, {"list", 6}, {"deque", 6},
+    {"map", 6}, {"std::map", 6}, {"unordered_map", 6}, {"set", 6}, {"multimap", 6}, {"multiset", 6},
+    {"unordered_set", 6}, {"queue", 6}, {"stack", 6}, {"priority_queue", 6}, {"pair", 6}, {"tuple", 6},
+    {"array", 6}, {"bitset", 6}, {"shared_ptr", 6}, {"unique_ptr", 6}, {"weak_ptr", 6}, {"make_shared", 6}, {"make_unique", 6},
+
+    
+    {"sort", 6}, {"stable_sort", 6}, {"binary_search", 6}, {"lower_bound", 6}, {"upper_bound", 6}, {"find", 6},
+    {"count", 6}, {"for_each", 6}, {"transform", 6}, {"accumulate", 6}, {"emplace_back", 6}, {"push_back", 6},
+
+    
+    {"include", 6}, {"define", 6}, {"ifdef", 6}, {"ifndef", 6}, {"endif", 6}, {"pragma", 6}, {"undef", 6}, {"elif", 6},
+    {"ifdefined", 6}, {"elifdef", 6}, {"error", 6}, {"warning", 6}, {"line", 6},
+
+    
+    {"concept", 5}, {"requires", 5}, {"co_await", 4}, {"co_return", 4}, {"co_yield", 4},
+    {"import", 6}, {"module", 6}, {"reinterpret", 3},
+
+    
+    {"std", 5}, {"nullptr_t", 3}, {"initializer_list", 5}, {"optional", 5}, {"variant", 5}, {"any", 5},
+
+    
+    {"EOF", 6}, {"NULL", 3}, {"SIGINT", 6}, {"SIGTERM", 6},
+
+    
+    {"constexpr_if", 4}, {"inline_namespace", 5}, {"abi_tag", 6},
+
+    
+    {"memcpy", 6}, {"memset", 6}, {"memcmp", 6}, {"strcpy", 6}, {"strncpy", 6}, {"strlen", 6}, {"strcmp", 6},
+
+    
+    {"[[nodiscard]]", 5}, {"[[deprecated]]", 5}, {"[[maybe_unused]]", 5},
+
+    
+    {"cerr", 6}, {"cout", 6}, {"cin", 6}, {"clog", 6}
 };
 
 #define KEY_SAVE userSettings.keys.saveKey
@@ -125,16 +178,47 @@ bool searchInLines(const vector<string>& lines, const string& query, int& row, i
 }
 
 bool gotoLine(int& row, int& col, int max_row, int lines_size) {
-    string input = promptInput("Goto line: ", max_row);
+    // Note: signature kept for compatibility; promptInput expects max_col so reuse the value.
+    int max_col = max_row;
+    if (lines_size <= 0) return false;
+
+    string input = promptInput("Goto line (line[:col]): ", max_col);
+    auto trim = [](string &s) {
+        size_t a = s.find_first_not_of(" \t\r\n");
+        size_t b = s.find_last_not_of(" \t\r\n");
+        if (a == string::npos) { s.clear(); return; }
+        s = s.substr(a, b - a + 1);
+    };
+    trim(input);
+    if (input.empty()) return false;
+
+    // support formats: "123" or "123:45" or "123,45"
+    for (auto &c : input) if (c == ',') c = ':';
+    size_t sep = input.find(':');
+    string linePart = (sep == string::npos) ? input : input.substr(0, sep);
+    string colPart = (sep == string::npos) ? "" : input.substr(sep + 1);
+
     try {
-        int ln = stoi(input);
-        if (ln >= 1 && ln <= lines_size) {
-            row = ln - 1;
-            col = 0;
-            return true;
+        int ln = stoi(linePart);
+        if (ln < 1 || ln > lines_size) {
+            beep();
+            return false;
         }
-    } catch (...) {}
-    return false;
+        int newCol = 0;
+        if (!colPart.empty()) {
+            trim(colPart);
+            if (!colPart.empty()) {
+                newCol = stoi(colPart);
+                if (newCol < 0) newCol = 0;
+            }
+        }
+        row = ln - 1;
+        col = newCol;
+        return true;
+    } catch (...) {
+        beep();
+        return false;
+    }
 }
 
 #include <map>
@@ -152,7 +236,32 @@ void disableFlicker() {
     idlok(stdscr, TRUE);
 }
 vector<string> preloadFileContent(const string& filename) {
-    return loadFile(filename);
+    vector<string> lines;
+    if (filename.empty()) {
+        lines.push_back("");
+        return lines;
+    }
+    struct stat st;
+    if (stat(filename.c_str(), &st) == 0 && st.st_size > 0) {
+        
+        lines.reserve(static_cast<size_t>(std::max(1LL, (long long)(st.st_size / 64))));
+    }
+
+    ifstream file(filename);
+    if (!file.is_open()) {
+        lines.push_back("");
+        return lines;
+    }
+
+    string line;
+    while (getline(file, line)) {
+        
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        lines.push_back(std::move(line));
+    }
+
+    if (lines.empty()) lines.push_back("");
+    return lines;
 }
 void printHighlightedLine(WINDOW* pad, int y, int x, const string& line) {
     int i = 0;

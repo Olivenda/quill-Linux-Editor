@@ -461,6 +461,7 @@ int main(int argc, char* argv[]) {
     if (argc < 2) {
         cout << "Usage: quill <filename>" << endl;
         cout << "       quill uninstall    (uninstalls quill)" << endl;
+        cout << "       quill update       (updates quill)" << endl;
         return 1;
     }
     
@@ -469,10 +470,13 @@ int main(int argc, char* argv[]) {
         cout << "Quill has been uninstalled." << endl;
         return 0;
     }
+
+    if (string(argv[1]) == "update") {
+        system("bash update.sh");
+        cout << "Quill has been updated." << endl;
+        return 0;
+    }
     
-
-
-
     string filename = argv[1];
     nanoEditor(filename);
     return 0;

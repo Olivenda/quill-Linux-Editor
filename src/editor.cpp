@@ -466,7 +466,7 @@ int main(int argc, char* argv[]) {
     }
     
     if (string(argv[1]) == "uninstall") {
-        system("rm -f /usr/local/bin/quill");
+        system("sudo rm -f /usr/local/bin/quill");
         cout << "Quill has been uninstalled." << endl;
         return 0;
     }

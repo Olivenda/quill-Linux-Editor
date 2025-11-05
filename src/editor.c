@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 #include <ctype.h>
 
+                     
 #define MAX_LINES 10000
 #define MAX_LINE_LENGTH 4096
 
@@ -81,10 +82,16 @@ KeywordColor keyword_colors[] = {
     {"int", 3}, {"char", 3}, {"return", 4}, {"if", 4}, {"else", 4},
     {"for", 4}, {"while", 4}, {"break", 4}, {"continue", 4}, {"void", 3},
     {"double", 3}, {"float", 3}, {"struct", 5}, {"typedef", 3},
-    {"include", 6}, {"define", 6}, {"NULL", 3}, {"static", 3},
+    {"include", 6},{"main", 6}, {"define", 6}, {"NULL", 3}, {"static", 3},
     {"const", 3}, {"unsigned", 3}, {"signed", 3}, {"sizeof", 3},
     {"printf", 6}, {"scanf", 6}, {"malloc", 6}, {"free", 6},
     {"switch", 4}, {"case", 4}, {"default", 4}, {"do", 4},
+    {"long", 3}, {"short", 3}, {"volatile", 3}, {"extern", 3}, {"inline", 3},
+    {"register", 3}, {"auto", 3}, {"goto", 4}, {"enum", 5}, {"union", 5},
+    {"asm", 6}, {"_Bool", 3}, {"true", 3}, {"false", 3}, {"pragma", 6},
+    {"strcpy", 6}, {"strncpy", 6}, {"memcpy", 6}, {"memset", 6}, {"memcmp", 6},
+    {"fopen", 6}, {"fclose", 6}, {"fread", 6}, {"fwrite", 6}, {"fseek", 6},
+    {"ftell", 6}, {"fprintf", 6}, {"sprintf", 6}, {"sscanf", 6},
     {NULL, 0}
 };
 
@@ -218,12 +225,76 @@ void nanoEditor(const char *filename) {
         }
         if (ch == 17) { // Ctrl+Q
             if (modified) {
-                strcpy(status_msg, "Unsaved changes! Press Ctrl+Q again to quit.");
-                int confirm = getch();
-                if (confirm == 17) break;
-                continue;
+            strcpy(status_msg, "Unsaved changes! Press Ctrl+Q again to quit.");
+            int confirm = getch();
+            if (confirm == 17) break;
+            continue;
             }
             break;
+        }
+
+        // Ctrl+F : Search
+        if (ch == 6) {
+            char query[256] = "";
+            echo();
+            mvhline(LINES-1, 0, ' ', max_col);
+            mvprintw(LINES-1, 0, "Search: ");
+            refresh();
+            mvgetnstr(LINES-1, 8, query, sizeof(query)-1);
+            noecho();
+
+            if (strlen(query) == 0) {
+            strcpy(status_msg, "Search cancelled");
+            continue;
+            }
+
+            int found = 0;
+            // search from current row to end, then wrap
+            for (int pass = 0; pass < 2 && !found; pass++) {
+            int start = (pass == 0) ? row : 0;
+            int end = (pass == 0) ? line_count : row;
+            for (int i = start; i < end; i++) {
+                char *p = strstr(lines[i], query);
+                if (p) {
+                row = i;
+                col = p - lines[i];
+                if (col > strlen(lines[row])) col = strlen(lines[row]);
+                // adjust scroll_offset to bring row into view
+                if (row < scroll_offset) scroll_offset = row;
+                else if (row - scroll_offset >= max_row - 1) scroll_offset = row - (max_row - 2);
+                snprintf(status_msg, sizeof(status_msg), "Found at Ln %d, Col %d", row+1, col+1);
+                found = 1;
+                break;
+                }
+            }
+            }
+            if (!found) {
+            snprintf(status_msg, sizeof(status_msg), "Not found: %s", query);
+            }
+            continue;
+        }
+
+        // Ctrl+G : Goto line
+        if (ch == 7) {
+            char buf[32] = "";
+            echo();
+            mvhline(LINES-1, 0, ' ', max_col);
+            mvprintw(LINES-1, 0, "Goto line: ");
+            refresh();
+            mvgetnstr(LINES-1, 11, buf, sizeof(buf)-1);
+            noecho();
+
+            int target = atoi(buf);
+            if (target <= 0 || target > line_count) {
+            snprintf(status_msg, sizeof(status_msg), "Invalid line: %s", buf);
+            continue;
+            }
+            row = target - 1;
+            if (col > strlen(lines[row])) col = strlen(lines[row]);
+            if (row < scroll_offset) scroll_offset = row;
+            else if (row - scroll_offset >= max_row - 1) scroll_offset = row - (max_row - 2);
+            snprintf(status_msg, sizeof(status_msg), "Jumped to line %d", target);
+            continue;
         }
 
         switch (ch) {

@@ -1,0 +1,332 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ncurses.h>
+#include <sys/stat.h>
+#include <ctype.h>
+
+#define MAX_LINES 10000
+#define MAX_LINE_LENGTH 4096
+
+// --- Utility Functions ---
+int fileExists(const char *filename) {
+    struct stat buffer;
+    return (stat(filename, &buffer) == 0);
+}
+
+char **loadFile(const char *filename, int *line_count) {
+    FILE *fp = fopen(filename, "r");
+    char **lines = malloc(sizeof(char*) * MAX_LINES);
+    *line_count = 0;
+
+    if (!fp) {
+        lines[0] = strdup("");
+        *line_count = 1;
+        return lines;
+    }
+
+    char buffer[MAX_LINE_LENGTH];
+    while (fgets(buffer, sizeof(buffer), fp)) {
+        buffer[strcspn(buffer, "\r\n")] = 0;
+        lines[*line_count] = strdup(buffer);
+        (*line_count)++;
+        if (*line_count >= MAX_LINES) break;
+    }
+
+    if (*line_count == 0) {
+        lines[0] = strdup("");
+        *line_count = 1;
+    }
+
+    fclose(fp);
+    return lines;
+}
+
+int confirmOverwrite(const char *filename, int max_col) {
+    char prompt[] = "File exists! Overwrite? (y/n): ";
+    mvhline(LINES-2, 0, ' ', max_col);
+    mvprintw(LINES-2, 0, "%s", prompt);
+    int ch = getch();
+    return (ch == 'y' || ch == 'Y');
+}
+
+void saveFile(const char *filename, char **lines, int line_count) {
+    int max_row, max_col;
+    getmaxyx(stdscr, max_row, max_col);
+
+    if (fileExists(filename)) {
+        if (!confirmOverwrite(filename, max_col)) {
+            return;
+        }
+    }
+
+    FILE *fp = fopen(filename, "w");
+    if (!fp) return;
+
+    for (int i = 0; i < line_count; i++) {
+        fprintf(fp, "%s\n", lines[i]);
+    }
+
+    fclose(fp);
+}
+
+// --- Syntax Highlighting ---
+
+typedef struct {
+    const char *word;
+    int color;
+} KeywordColor;
+
+KeywordColor keyword_colors[] = {
+    {"int", 3}, {"char", 3}, {"return", 4}, {"if", 4}, {"else", 4},
+    {"for", 4}, {"while", 4}, {"break", 4}, {"continue", 4}, {"void", 3},
+    {"double", 3}, {"float", 3}, {"struct", 5}, {"typedef", 3},
+    {"include", 6}, {"define", 6}, {"NULL", 3}, {"static", 3},
+    {"const", 3}, {"unsigned", 3}, {"signed", 3}, {"sizeof", 3},
+    {"printf", 6}, {"scanf", 6}, {"malloc", 6}, {"free", 6},
+    {"switch", 4}, {"case", 4}, {"default", 4}, {"do", 4},
+    {NULL, 0}
+};
+
+int getKeywordColor(const char *word) {
+    for (int i = 0; keyword_colors[i].word != NULL; i++) {
+        if (strcmp(word, keyword_colors[i].word) == 0)
+            return keyword_colors[i].color;
+    }
+    return 0;
+}
+
+void printHighlightedLine(WINDOW *pad, int y, int x, const char *line) {
+    int i = 0;
+    int len = strlen(line);
+    while (i < len) {
+        // Comment
+        if (line[i] == '/' && i+1 < len && line[i+1] == '/') {
+            wattron(pad, COLOR_PAIR(8));
+            mvwprintw(pad, y, x+i, "%s", line+i);
+            wattroff(pad, COLOR_PAIR(8));
+            break;
+        }
+
+        // String literal
+        if (line[i] == '"') {
+            int start = i++;
+            while (i < len && (line[i] != '"' || line[i-1] == '\\')) i++;
+            if (i < len) i++;
+            wattron(pad, COLOR_PAIR(7));
+            mvwprintw(pad, y, x+start, "%.*s", i-start, line+start);
+            wattroff(pad, COLOR_PAIR(7));
+            continue;
+        }
+
+        // Number
+        if (isdigit(line[i]) && (i == 0 || !isalnum(line[i-1]))) {
+            int start = i;
+            while (i < len && (isdigit(line[i]) || line[i]=='.')) i++;
+            wattron(pad, COLOR_PAIR(7));
+            mvwprintw(pad, y, x+start, "%.*s", i-start, line+start);
+            wattroff(pad, COLOR_PAIR(7));
+            continue;
+        }
+
+        // Word (potential keyword)
+        if (isalpha(line[i]) || line[i]=='_') {
+            int start = i;
+            while (i < len && (isalnum(line[i]) || line[i]=='_')) i++;
+            char word[128];
+            int wlen = i-start;
+            strncpy(word, line+start, wlen);
+            word[wlen] = 0;
+            int color = getKeywordColor(word);
+            if (color) wattron(pad, COLOR_PAIR(color));
+            mvwprintw(pad, y, x+start, "%s", word);
+            if (color) wattroff(pad, COLOR_PAIR(color));
+            continue;
+        }
+
+        // Regular char
+        mvwaddch(pad, y, x+i, line[i]);
+        i++;
+    }
+}
+
+// --- Status Bar ---
+void drawStatusBar(const char *filename, int modified, int row, int col, int max_col, const char *msg) {
+    attron(A_REVERSE);
+    char status[512];
+    snprintf(status, sizeof(status), " %s %s | Ctrl+S: Save | Ctrl+Q: Quit | Ln %d, Col %d ",
+             filename, modified ? "[*]" : "[Saved]", row+1, col+1);
+    mvhline(LINES-1, 0, ' ', max_col);
+    mvprintw(LINES-1, 0, "%s", status);
+    if (msg && strlen(msg) > 0)
+        mvprintw(LINES-1, max_col - strlen(msg) - 2, "%s", msg);
+    attroff(A_REVERSE);
+}
+
+// --- The Editor ---
+void nanoEditor(const char *filename) {
+    int line_count;
+    char **lines = loadFile(filename, &line_count);
+    int row = 0, col = 0, scroll_offset = 0;
+    int modified = 0;
+    char status_msg[128] = "";
+
+    initscr();
+    start_color();
+    noecho();
+    raw();
+    keypad(stdscr, TRUE);
+    set_escdelay(25);
+
+    init_pair(1, COLOR_CYAN, COLOR_BLACK);
+    init_pair(2, COLOR_WHITE, COLOR_BLACK);
+    init_pair(3, COLOR_YELLOW, COLOR_BLACK);
+    init_pair(4, COLOR_GREEN, COLOR_BLACK);
+    init_pair(5, COLOR_MAGENTA, COLOR_BLACK);
+    init_pair(6, COLOR_CYAN, COLOR_BLACK);
+    init_pair(7, COLOR_RED, COLOR_BLACK);
+    init_pair(8, COLOR_BLUE, COLOR_BLACK);
+
+    int max_row, max_col;
+    getmaxyx(stdscr, max_row, max_col);
+    WINDOW *pad = newpad(MAX_LINES, max_col);
+
+    while (1) {
+        werase(pad);
+        for (int i = scroll_offset; i < line_count && i - scroll_offset < max_row - 1; i++) {
+            wattron(pad, COLOR_PAIR(1));
+            mvwprintw(pad, i - scroll_offset, 0, "%3d ", i + 1);
+            wattroff(pad, COLOR_PAIR(1));
+            printHighlightedLine(pad, i - scroll_offset, 4, lines[i]);
+        }
+
+        prefresh(pad, 0, 0, 0, 0, max_row - 2, max_col - 1);
+        drawStatusBar(filename, modified, row, col, max_col, status_msg);
+        move(row - scroll_offset, col + 4);
+        refresh();
+
+        int ch = getch();
+        if (ch == 24) { // Ctrl+X
+            saveFile(filename, lines, line_count);
+            break;
+        }
+        if (ch == 19) { // Ctrl+S
+            saveFile(filename, lines, line_count);
+            modified = 0;
+            strcpy(status_msg, "Saved!");
+            continue;
+        }
+        if (ch == 17) { // Ctrl+Q
+            if (modified) {
+                strcpy(status_msg, "Unsaved changes! Press Ctrl+Q again to quit.");
+                int confirm = getch();
+                if (confirm == 17) break;
+                continue;
+            }
+            break;
+        }
+
+        switch (ch) {
+            case KEY_UP:
+                if (row > 0) row--;
+                if (col > strlen(lines[row])) col = strlen(lines[row]);
+                if (row < scroll_offset) scroll_offset--;
+                break;
+            case KEY_DOWN:
+                if (row < line_count - 1) row++;
+                if (col > strlen(lines[row])) col = strlen(lines[row]);
+                if (row - scroll_offset >= max_row - 1) scroll_offset++;
+                break;
+            case KEY_LEFT:
+                if (col > 0) col--;
+                else if (row > 0) {
+                    row--;
+                    col = strlen(lines[row]);
+                    if (row < scroll_offset) scroll_offset--;
+                }
+                break;
+            case KEY_RIGHT:
+                if (col < strlen(lines[row])) col++;
+                else if (row < line_count - 1) {
+                    row++;
+                    col = 0;
+                    if (row - scroll_offset >= max_row - 1) scroll_offset++;
+                }
+                break;
+            case 8:
+            case 127:
+            case KEY_BACKSPACE:
+                if (col > 0) {
+                    memmove(&lines[row][col-1], &lines[row][col], strlen(lines[row]) - col + 1);
+                    col--;
+                    modified = 1;
+                } else if (row > 0) {
+                    int prev_len = strlen(lines[row-1]);
+                    lines[row-1] = realloc(lines[row-1], prev_len + strlen(lines[row]) + 1);
+                    strcat(lines[row-1], lines[row]);
+                    free(lines[row]);
+                    for (int i=row; i<line_count-1; i++)
+                        lines[i] = lines[i+1];
+                    line_count--;
+                    row--;
+                    col = prev_len;
+                    modified = 1;
+                }
+                break;
+            case '\n':
+                line_count++;
+                for (int i=line_count-1; i>row+1; i--)
+                    lines[i] = lines[i-1];
+                lines[row+1] = strdup(lines[row]+col);
+                lines[row][col] = '\0';
+                row++;
+                col = 0;
+                modified = 1;
+                break;
+            default:
+                if (ch >= 32 && ch <= 126) {
+                    int len = strlen(lines[row]);
+                    char *new_line = malloc(len + 2);
+                    strncpy(new_line, lines[row], col);
+                    new_line[col] = ch;
+                    strcpy(new_line+col+1, lines[row]+col);
+                    free(lines[row]);
+                    lines[row] = new_line;
+                    col++;
+                    modified = 1;
+                }
+                break;
+        }
+    }
+
+    delwin(pad);
+    endwin();
+
+    for (int i = 0; i < line_count; i++) free(lines[i]);
+    free(lines);
+}
+
+// --- Main ---
+int main(int argc, char *argv[]) {
+    if (argc < 2) {
+        printf("Usage: quill <filename>\n");
+        printf("       quill uninstall    (uninstalls quill)\n");
+        printf("       quill update       (updates quill)\n");
+        return 1;
+    }
+
+    if (strcmp(argv[1], "uninstall") == 0) {
+        system("sudo rm -f /usr/local/bin/quill");
+        printf("Quill has been uninstalled.\n");
+        return 0;
+    }
+
+    if (strcmp(argv[1], "update") == 0) {
+        system("bash update.sh");
+        printf("Quill has been updated.\n");
+        return 0;
+    }
+
+    nanoEditor(argv[1]);
+    return 0;
+}

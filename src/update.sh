@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+`#!/usr/bin/env bash
 # Quill Updater - downloads and installs the specified release
 # Hardcoded to V0.1.1 for reproducibility
 set -euo pipefail
@@ -47,7 +47,7 @@ fi
 warn "Extracting update into $INSTALL_DIR..."
 sudo tar -xf "$TARBALL_NAME" -C "$INSTALL_DIR" --strip-components=0
 cd /usr/local/bin
-sudo g++ -o quill editor.cpp -lncurses
+sudo gcc -o quill editor.cpp -lncurses
 
 log "Extraction complete."
 

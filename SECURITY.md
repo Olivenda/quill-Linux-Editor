@@ -5,11 +5,11 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.0.1   | :x: |
-| 0.0.2   | :white_check_mark: |
+| 0.0.1   | :x:                |
+| 0.0.2   | ✅                 |
 | 0.1     | ✅                 |
-| x.x.x   | :x:                |
-
+| 0.1.1   | ✅                 |
+ 
 ## Reporting a Vulnerability
 
 If you have discovered a security vulnerability, please report it promptly to ensure the safety and integrity of our systems.

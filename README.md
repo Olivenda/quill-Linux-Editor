@@ -13,6 +13,15 @@ This project is licensed under the [MIT License](LICENSE), with the following co
 
 3. **Open-Source**: You may modify, distribute, and use this template as long as you adhere to the above conditions.
 
+## How to Download the Editor
+
+Fedora :
+Goto the Newest Release
+Download quill.rpm
+Open Terminal in your Downloads Folder and type:
+
+	sudo dnf install quill.rpm
+
 ## Launching the Editor
 
 1. Compile the editor using the provided `Makefile`:
@@ -21,7 +30,7 @@ This project is licensed under the [MIT License](LICENSE), with the following co
    ```
 2. Run the editor with the file you want to edit:
    ```bash
-   ./quill <filename>
+   ./quill <filename> 
    ```
 
 ## Key Bindings

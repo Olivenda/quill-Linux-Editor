@@ -22,13 +22,16 @@ Open Terminal in your Downloads Folder and type:
 
 	sudo dnf install quill.rpm
 
+Debian/Ubuntu:
+Goto the Newest Release
+Download quill.deb
+Open Terminal in your Donwloads Folder and type:
+
+	sudo apt install quill.deb
+
 ## Launching the Editor
 
-1. Compile the editor using the provided `Makefile`:
-   ```bash
-   make
-   ```
-2. Run the editor with the file you want to edit:
+1. Run the editor with the file you want to edit:
    ```bash
    ./quill <filename> 
    ```

@@ -5,7 +5,7 @@
 #include <sys/stat.h>
 #include <ctype.h>
 
-                     
+
 #define MAX_LINES 10000
 #define MAX_LINE_LENGTH 4096
 
@@ -213,17 +213,17 @@ void nanoEditor(const char *filename) {
         refresh();
 
         int ch = getch();
-        if (ch == 24) { 
+        if (ch == 24) {
             saveFile(filename, lines, line_count);
             break;
         }
-        if (ch == 19) { 
+        if (ch == 19) {
             saveFile(filename, lines, line_count);
             modified = 0;
             strcpy(status_msg, "Saved!");
             continue;
         }
-        if (ch == 17) { 
+        if (ch == 17) {
             if (modified) {
             strcpy(status_msg, "Unsaved changes! Press Ctrl+Q again to quit.");
             int confirm = getch();
@@ -233,7 +233,7 @@ void nanoEditor(const char *filename) {
             break;
         }
 
-        
+
         if (ch == 6) {
             char query[256] = "";
             echo();
@@ -249,7 +249,7 @@ void nanoEditor(const char *filename) {
             }
 
             int found = 0;
-            
+
             for (int pass = 0; pass < 2 && !found; pass++) {
             int start = (pass == 0) ? row : 0;
             int end = (pass == 0) ? line_count : row;
@@ -259,7 +259,7 @@ void nanoEditor(const char *filename) {
                 row = i;
                 col = p - lines[i];
                 if (col > strlen(lines[row])) col = strlen(lines[row]);
-                
+
                 if (row < scroll_offset) scroll_offset = row;
                 else if (row - scroll_offset >= max_row - 1) scroll_offset = row - (max_row - 2);
                 snprintf(status_msg, sizeof(status_msg), "Found at Ln %d, Col %d", row+1, col+1);
@@ -274,7 +274,7 @@ void nanoEditor(const char *filename) {
             continue;
         }
 
-        
+
         if (ch == 7) {
             char buf[32] = "";
             echo();

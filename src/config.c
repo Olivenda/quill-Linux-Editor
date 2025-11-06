@@ -11,7 +11,7 @@ typedef struct {
 
 
 static EditorConfig default_config = {
-    .ram_mb = 1024, // Default 1024 MB RAM
+    .ram_mb = 1024, //
 };
 
 static const char CONFIG_FILE[] = "editor_config.bin";

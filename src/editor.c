@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ncurses.h>
+#include <sys/types.h>
 #include <sys/stat.h>
 #include <ctype.h>
 
@@ -16,39 +17,95 @@ int fileExists(const char *filename) {
 }
 
 char **loadFile(const char *filename, int *line_count) {
-    FILE *fp = fopen(filename, "r");
-    char **lines = malloc(sizeof(char*) * MAX_LINES);
+    struct stat st;
+    FILE *fp = fopen(filename, "rb");
     *line_count = 0;
 
     if (!fp) {
+        char **lines = malloc(sizeof(char*) * 4);
         lines[0] = strdup("");
         *line_count = 1;
         return lines;
     }
 
-    char buffer[MAX_LINE_LENGTH];
-    while (fgets(buffer, sizeof(buffer), fp)) {
-        buffer[strcspn(buffer, "\r\n")] = 0;
-        lines[*line_count] = strdup(buffer);
-        (*line_count)++;
-        if (*line_count >= MAX_LINES) break;
-    }
-
-    if (*line_count == 0) {
+    if (fstat(fileno(fp), &st) != 0 || st.st_size == 0) {
+        // empty file
+        fclose(fp);
+        char **lines = malloc(sizeof(char*) * 4);
         lines[0] = strdup("");
         *line_count = 1;
+        return lines;
     }
 
+    off_t size = st.st_size;
+    char *filebuf = malloc(size + 1);
+    if (!filebuf) {
+        fclose(fp);
+        char **lines = malloc(sizeof(char*) * 4);
+        lines[0] = strdup("");
+        *line_count = 1;
+        return lines;
+    }
+
+    size_t read = fread(filebuf, 1, size, fp);
     fclose(fp);
+    filebuf[read] = '\0';
+
+
+    size_t est = 1;
+    for (size_t i = 0; i < read; i++) if (filebuf[i] == '\n') est++;
+    char **lines = malloc(sizeof(char*) * (est + 2));
+    size_t idx = 0;
+
+    char *start = filebuf;
+    for (size_t i = 0; i < read; ++i) {
+        char c = filebuf[i];
+        if (c == '\r') {
+            filebuf[i] = '\0';
+        } else if (c == '\n') {
+            filebuf[i] = '\0';
+            size_t len = start ? strlen(start) : 0;
+            char *line = malloc(len + 1);
+            if (line) memcpy(line, start, len + 1);
+            else line = strdup("");
+            lines[idx++] = line;
+            start = filebuf + i + 1;
+        }
+    }
+
+    // trailing data after last newline
+    if (start <= filebuf + read) {
+        size_t len = strlen(start);
+        char *line = malloc(len + 1);
+        if (line) memcpy(line, start, len + 1);
+        else line = strdup("");
+        lines[idx++] = line;
+    }
+
+    free(filebuf);
+
+    if (idx == 0) {
+        lines[0] = strdup("");
+        idx = 1;
+    }
+
+    *line_count = (int)idx;
     return lines;
 }
 
 int confirmOverwrite(const char *filename, int max_col) {
-    char prompt[] = "File exists! Overwrite? (y/n): ";
+    char prompt[256];
+    snprintf(prompt, sizeof(prompt), "File '%s' exists! Overwrite? (y/n): ", filename);
     mvhline(LINES-2, 0, ' ', max_col);
     mvprintw(LINES-2, 0, "%s", prompt);
-    int ch = getch();
-    return (ch == 'y' || ch == 'Y');
+    refresh();
+
+    int ch;
+    while (1) {
+        ch = getch();
+        if (ch == 'y' || ch == 'Y') return 1;
+        if (ch == 'n' || ch == 'N') return 0;
+    }
 }
 
 void saveFile(const char *filename, char **lines, int line_count) {
@@ -61,14 +118,38 @@ void saveFile(const char *filename, char **lines, int line_count) {
         }
     }
 
-    FILE *fp = fopen(filename, "w");
-    if (!fp) return;
-
+    // compute total size and build a single buffer to minimize I/O calls
+    size_t total = 0;
     for (int i = 0; i < line_count; i++) {
-        fprintf(fp, "%s\n", lines[i]);
+        total += strlen(lines[i]);
+        total += 1; // newline
     }
 
+    char *outbuf = malloc(total + 1);
+    if (!outbuf) return;
+
+    char *p = outbuf;
+    for (int i = 0; i < line_count; i++) {
+        size_t len = strlen(lines[i]);
+        memcpy(p, lines[i], len);
+        p += len;
+        *p++ = '\n';
+    }
+    *p = '\0';
+
+    FILE *fp = fopen(filename, "wb");
+    if (!fp) {
+        free(outbuf);
+        return;
+    }
+
+    // set full buffering for fewer system calls
+    static char filebuf[8192];
+    setvbuf(fp, filebuf, _IOFBF, sizeof(filebuf));
+
+    fwrite(outbuf, 1, total, fp);
     fclose(fp);
+    free(outbuf);
 }
 
 // --- Syntax Highlighting ---
@@ -91,6 +172,7 @@ KeywordColor keyword_colors[] = {
     {"asm", 6}, {"_Bool", 3}, {"true", 3}, {"false", 3}, {"pragma", 6},
     {"strcpy", 6}, {"strncpy", 6}, {"memcpy", 6}, {"memset", 6}, {"memcmp", 6},
     {"fopen", 6}, {"fclose", 6}, {"fread", 6}, {"fwrite", 6}, {"fseek", 6},
+    {"(", 6}, {")", 6}, {"{", 4}, {"}", 4},
     {"ftell", 6}, {"fprintf", 6}, {"sprintf", 6}, {"sscanf", 6},
     {NULL, 0}
 };
@@ -160,14 +242,32 @@ void printHighlightedLine(WINDOW *pad, int y, int x, const char *line) {
 // --- Status Bar ---
 void drawStatusBar(const char *filename, int modified, int row, int col, int max_col, const char *msg) {
     attron(A_REVERSE);
-    char status[512];
-    snprintf(status, sizeof(status), " %s %s | Ctrl+S: Save | Ctrl+Q: Quit | Ln %d, Col %d ",
-             filename, modified ? "[*]" : "[Saved]", row+1, col+1);
     mvhline(LINES-1, 0, ' ', max_col);
-    mvprintw(LINES-1, 0, "%s", status);
-    if (msg && strlen(msg) > 0)
-        mvprintw(LINES-1, max_col - strlen(msg) - 2, "%s", msg);
+
+    
+    char left_status[256];
+    snprintf(left_status, sizeof(left_status), " %s %s", 
+             filename, modified ? "[Modified]" : "[Saved]");
+    mvprintw(LINES-1, 0, "%s", left_status);
+
+    
+    char shortcuts[256];
+    snprintf(shortcuts, sizeof(shortcuts), 
+             "| ^S Save | ^Q Quit | ^F Find | ^G Goto | ^X Exit |");
+    mvprintw(LINES-1, (max_col - strlen(shortcuts)) / 2, "%s", shortcuts);
+
+    
+    char right_status[256];
+    snprintf(right_status, sizeof(right_status), "Ln %d, Col %d ", row+1, col+1);
+    mvprintw(LINES-1, max_col - strlen(right_status), "%s", right_status);
+
+    
+    if (msg && strlen(msg) > 0) {
+        mvprintw(LINES-1, max_col - strlen(msg) - strlen(right_status) - 1, "%s", msg);
+    }
+
     attroff(A_REVERSE);
+    refresh();
 }
 
 // --- The Editor ---

@@ -33,7 +33,7 @@ Open Terminal in your Donwloads Folder and type:
 
 1. Run the editor with the file you want to edit:
    ```bash
-   ./quill <filename> 
+   quill <filename> 
    ```
 
 ## Key Bindings

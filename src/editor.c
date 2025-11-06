@@ -269,11 +269,29 @@ void drawStatusBar(const char *filename, int modified, int row, int col, int max
     attroff(A_REVERSE);
     refresh();
 }
+void ensure_lines_capacity(char ***lines_ptr, int *capacity, int min_needed) {
+    if (*capacity >= min_needed) return;
+    int newcap = *capacity ? *capacity : 1024;
+    while (newcap < min_needed) newcap *= 2;
+    char **tmp = realloc(*lines_ptr, sizeof(char*) * newcap);
+    if (tmp) {
+        *lines_ptr = tmp;
+        *capacity = newcap;
+    } else {
+        // allocation failure: keep old capacity (best-effort)
+    }
+}
 
-// --- The Editor ---
 void nanoEditor(const char *filename) {
     int line_count;
     char **lines = loadFile(filename, &line_count);
+
+    // ensure we have headroom for editing
+    int lines_capacity = line_count + 256;
+    if (lines_capacity < 1024) lines_capacity = 1024;
+    char **tmp = realloc(lines, sizeof(char*) * lines_capacity);
+    if (tmp) lines = tmp; // if realloc failed, keep original (low-memory fallback)
+
     int row = 0, col = 0, scroll_offset = 0;
     int modified = 0;
     char status_msg[128] = "";
@@ -284,7 +302,6 @@ void nanoEditor(const char *filename) {
     raw();
     keypad(stdscr, TRUE);
     set_escdelay(25);
-
     init_pair(1, COLOR_CYAN, COLOR_BLACK);
     init_pair(2, COLOR_WHITE, COLOR_BLACK);
     init_pair(3, COLOR_YELLOW, COLOR_BLACK);
@@ -306,35 +323,33 @@ void nanoEditor(const char *filename) {
             wattroff(pad, COLOR_PAIR(1));
             printHighlightedLine(pad, i - scroll_offset, 4, lines[i]);
         }
-
         prefresh(pad, 0, 0, 0, 0, max_row - 2, max_col - 1);
         drawStatusBar(filename, modified, row, col, max_col, status_msg);
         move(row - scroll_offset, col + 4);
         refresh();
 
         int ch = getch();
-        if (ch == 24) {
+
+        if (ch == 24) { // ^X exit (as in original)
             saveFile(filename, lines, line_count);
             break;
         }
-        if (ch == 19) {
+        if (ch == 19) { // ^S
             saveFile(filename, lines, line_count);
             modified = 0;
             strcpy(status_msg, "Saved!");
             continue;
         }
-        if (ch == 17) {
+        if (ch == 17) { // ^Q
             if (modified) {
-            strcpy(status_msg, "Unsaved changes! Press Ctrl+Q again to quit.");
-            int confirm = getch();
-            if (confirm == 17) break;
-            continue;
+                strcpy(status_msg, "Unsaved changes! Press Ctrl+Q again to quit.");
+                int confirm = getch();
+                if (confirm == 17) break;
+                continue;
             }
             break;
         }
-
-
-        if (ch == 6) {
+        if (ch == 6) { // ^F search
             char query[256] = "";
             echo();
             mvhline(LINES-1, 0, ' ', max_col);
@@ -342,40 +357,34 @@ void nanoEditor(const char *filename) {
             refresh();
             mvgetnstr(LINES-1, 8, query, sizeof(query)-1);
             noecho();
-
             if (strlen(query) == 0) {
-            strcpy(status_msg, "Search cancelled");
-            continue;
+                strcpy(status_msg, "Search cancelled");
+                continue;
             }
-
             int found = 0;
-
             for (int pass = 0; pass < 2 && !found; pass++) {
-            int start = (pass == 0) ? row : 0;
-            int end = (pass == 0) ? line_count : row;
-            for (int i = start; i < end; i++) {
-                char *p = strstr(lines[i], query);
-                if (p) {
-                row = i;
-                col = p - lines[i];
-                if (col > strlen(lines[row])) col = strlen(lines[row]);
-
-                if (row < scroll_offset) scroll_offset = row;
-                else if (row - scroll_offset >= max_row - 1) scroll_offset = row - (max_row - 2);
-                snprintf(status_msg, sizeof(status_msg), "Found at Ln %d, Col %d", row+1, col+1);
-                found = 1;
-                break;
+                int start = (pass == 0) ? row : 0;
+                int end = (pass == 0) ? line_count : row;
+                for (int i = start; i < end; i++) {
+                    char *p = strstr(lines[i], query);
+                    if (p) {
+                        row = i;
+                        col = p - lines[i];
+                        if (col > (int)strlen(lines[row])) col = strlen(lines[row]);
+                        if (row < scroll_offset) scroll_offset = row;
+                        else if (row - scroll_offset >= max_row - 1) scroll_offset = row - (max_row - 2);
+                        snprintf(status_msg, sizeof(status_msg), "Found at Ln %d, Col %d", row+1, col+1);
+                        found = 1;
+                        break;
+                    }
                 }
             }
-            }
             if (!found) {
-            snprintf(status_msg, sizeof(status_msg), "Not found: %s", query);
+                snprintf(status_msg, sizeof(status_msg), "Not found: %s", query);
             }
             continue;
         }
-
-
-        if (ch == 7) {
+        if (ch == 7) { // ^G goto
             char buf[32] = "";
             echo();
             mvhline(LINES-1, 0, ' ', max_col);
@@ -383,14 +392,13 @@ void nanoEditor(const char *filename) {
             refresh();
             mvgetnstr(LINES-1, 11, buf, sizeof(buf)-1);
             noecho();
-
             int target = atoi(buf);
             if (target <= 0 || target > line_count) {
-            snprintf(status_msg, sizeof(status_msg), "Invalid line: %s", buf);
-            continue;
+                snprintf(status_msg, sizeof(status_msg), "Invalid line: %s", buf);
+                continue;
             }
             row = target - 1;
-            if (col > strlen(lines[row])) col = strlen(lines[row]);
+            if (col > (int)strlen(lines[row])) col = strlen(lines[row]);
             if (row < scroll_offset) scroll_offset = row;
             else if (row - scroll_offset >= max_row - 1) scroll_offset = row - (max_row - 2);
             snprintf(status_msg, sizeof(status_msg), "Jumped to line %d", target);
@@ -400,12 +408,12 @@ void nanoEditor(const char *filename) {
         switch (ch) {
             case KEY_UP:
                 if (row > 0) row--;
-                if (col > strlen(lines[row])) col = strlen(lines[row]);
+                if (col > (int)strlen(lines[row])) col = strlen(lines[row]);
                 if (row < scroll_offset) scroll_offset--;
                 break;
             case KEY_DOWN:
                 if (row < line_count - 1) row++;
-                if (col > strlen(lines[row])) col = strlen(lines[row]);
+                if (col > (int)strlen(lines[row])) col = strlen(lines[row]);
                 if (row - scroll_offset >= max_row - 1) scroll_offset++;
                 break;
             case KEY_LEFT:
@@ -417,54 +425,81 @@ void nanoEditor(const char *filename) {
                 }
                 break;
             case KEY_RIGHT:
-                if (col < strlen(lines[row])) col++;
+                if (col < (int)strlen(lines[row])) col++;
                 else if (row < line_count - 1) {
                     row++;
                     col = 0;
                     if (row - scroll_offset >= max_row - 1) scroll_offset++;
                 }
                 break;
-            case 8:
-            case 127:
-            case KEY_BACKSPACE:
+            case 8: case 127: case KEY_BACKSPACE:
                 if (col > 0) {
-                    memmove(&lines[row][col-1], &lines[row][col], strlen(lines[row]) - col + 1);
+                    size_t cur_len = strlen(lines[row]);
+                    memmove(&lines[row][col-1], &lines[row][col], cur_len - col + 1);
                     col--;
                     modified = 1;
                 } else if (row > 0) {
                     int prev_len = strlen(lines[row-1]);
-                    lines[row-1] = realloc(lines[row-1], prev_len + strlen(lines[row]) + 1);
-                    strcat(lines[row-1], lines[row]);
+                    size_t newlen = prev_len + strlen(lines[row]) + 1;
+                    char *merged = realloc(lines[row-1], newlen);
+                    if (merged) {
+                        lines[row-1] = merged;
+                        strcat(lines[row-1], lines[row]);
+                    } else {
+                        // fall back: try to allocate a fresh buffer
+                        char *tmpbuf = malloc(newlen);
+                        if (tmpbuf) {
+                            strcpy(tmpbuf, lines[row-1]);
+                            strcat(tmpbuf, lines[row]);
+                            free(lines[row-1]);
+                            lines[row-1] = tmpbuf;
+                        }
+                    }
                     free(lines[row]);
-                    for (int i=row; i<line_count-1; i++)
-                        lines[i] = lines[i+1];
+                    for (int i = row; i < line_count - 1; i++) lines[i] = lines[i+1];
                     line_count--;
                     row--;
                     col = prev_len;
                     modified = 1;
                 }
                 break;
-            case '\n':
-                line_count++;
-                for (int i=line_count-1; i>row+1; i--)
-                    lines[i] = lines[i-1];
-                lines[row+1] = strdup(lines[row]+col);
+            case '\n': {
+                // Create tail first
+                char *tail = strdup(lines[row] + col);
+                if (!tail) tail = strdup("");
                 lines[row][col] = '\0';
+
+                // make room
+                line_count++;
+                ensure_lines_capacity(&lines, &lines_capacity, line_count + 1);
+
+                // shift down entries to make slot at row+1
+                for (int i = line_count - 1; i > row + 1; i--) {
+                    lines[i] = lines[i-1];
+                }
+                lines[row+1] = tail;
                 row++;
                 col = 0;
                 modified = 1;
                 break;
+            }
             default:
                 if (ch >= 32 && ch <= 126) {
-                    int len = strlen(lines[row]);
-                    char *new_line = malloc(len + 2);
-                    strncpy(new_line, lines[row], col);
-                    new_line[col] = ch;
-                    strcpy(new_line+col+1, lines[row]+col);
-                    free(lines[row]);
-                    lines[row] = new_line;
-                    col++;
-                    modified = 1;
+                    size_t len = strlen(lines[row]);
+                    int newlen = (int)len + 1;
+                    char *new_line = malloc(newlen + 1);
+                    if (new_line) {
+                        // copy left part
+                        if (col > 0) memcpy(new_line, lines[row], col);
+                        // insert char
+                        new_line[col] = (char)ch;
+                        // copy right part including null terminator
+                        memcpy(new_line + col + 1, lines[row] + col, len - col + 1);
+                        free(lines[row]);
+                        lines[row] = new_line;
+                        col++;
+                        modified = 1;
+                    }
                 }
                 break;
         }

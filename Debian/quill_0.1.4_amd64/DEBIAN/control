@@ -1,0 +1,7 @@
+Package: quill
+Version: 0.1.4
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: Christian R. <chris-r@cronodevelopment.com>
+Description: A simple CLI Text Editor

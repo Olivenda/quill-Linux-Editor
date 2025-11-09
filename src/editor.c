@@ -330,8 +330,16 @@ void nanoEditor(const char *filename) {
 
         int ch = getch();
 
-        if (ch == 24) { // ^X exit (as in original)
-            saveFile(filename, lines, line_count);
+        if (ch == 24) { // ^X
+            if (modified) {
+            mvhline(LINES-2, 0, ' ', max_col);
+            mvprintw(LINES-2, 0, "Save changes? (y/n): ");
+            refresh();
+            int save_ch = getch();
+            if (save_ch == 'y' || save_ch == 'Y') {
+                saveFile(filename, lines, line_count);
+            }
+            }
             break;
         }
         if (ch == 19) { // ^S
@@ -341,15 +349,9 @@ void nanoEditor(const char *filename) {
             continue;
         }
         if (ch == 17) { // ^Q
-            if (modified) {
-                strcpy(status_msg, "Unsaved changes! Press Ctrl+Q again to quit.");
-                int confirm = getch();
-                if (confirm == 17) break;
-                continue;
-            }
             break;
         }
-        if (ch == 6) { // ^F search
+        if (ch == 6) { 
             char query[256] = "";
             echo();
             mvhline(LINES-1, 0, ' ', max_col);
@@ -384,7 +386,7 @@ void nanoEditor(const char *filename) {
             }
             continue;
         }
-        if (ch == 7) { // ^G goto
+        if (ch == 7) { 
             char buf[32] = "";
             echo();
             mvhline(LINES-1, 0, ' ', max_col);
@@ -446,7 +448,7 @@ void nanoEditor(const char *filename) {
                         lines[row-1] = merged;
                         strcat(lines[row-1], lines[row]);
                     } else {
-                        // fall back: try to allocate a fresh buffer
+                        
                         char *tmpbuf = malloc(newlen);
                         if (tmpbuf) {
                             strcpy(tmpbuf, lines[row-1]);
@@ -464,16 +466,16 @@ void nanoEditor(const char *filename) {
                 }
                 break;
             case '\n': {
-                // Create tail first
+                
                 char *tail = strdup(lines[row] + col);
                 if (!tail) tail = strdup("");
                 lines[row][col] = '\0';
 
-                // make room
+                
                 line_count++;
                 ensure_lines_capacity(&lines, &lines_capacity, line_count + 1);
 
-                // shift down entries to make slot at row+1
+                
                 for (int i = line_count - 1; i > row + 1; i--) {
                     lines[i] = lines[i-1];
                 }

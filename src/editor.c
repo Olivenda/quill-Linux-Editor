@@ -160,13 +160,13 @@ typedef struct {
 } KeywordColor;
 
 KeywordColor keyword_colors[] = {
-    {"int", 3}, {"char", 3}, {"return", 4}, {"if", 4}, {"else", 4},
-    {"for", 4}, {"while", 4}, {"break", 4}, {"continue", 4}, {"void", 3},
+    {"int", 5}, {"char", 5}, {"return", 4}, {"if", 5}, {"else", 5},
+    {"for", 5}, {"while", 5}, {"break", 4}, {"continue", 4}, {"void", 3},
     {"double", 3}, {"float", 3}, {"struct", 5}, {"typedef", 3},
-    {"include", 6},{"main", 6}, {"define", 6}, {"NULL", 3}, {"static", 3},
+    {"include", 6}, {"main", 6}, {"define", 6}, {"NULL", 3}, {"static", 3},
     {"const", 3}, {"unsigned", 3}, {"signed", 3}, {"sizeof", 3},
     {"printf", 6}, {"scanf", 6}, {"malloc", 6}, {"free", 6},
-    {"switch", 4}, {"case", 4}, {"default", 4}, {"do", 4},
+    {"switch", 5}, {"case", 5}, {"default", 4}, {"do", 4},
     {"long", 3}, {"short", 3}, {"volatile", 3}, {"extern", 3}, {"inline", 3},
     {"register", 3}, {"auto", 3}, {"goto", 4}, {"enum", 5}, {"union", 5},
     {"asm", 6}, {"_Bool", 3}, {"true", 3}, {"false", 3}, {"pragma", 6},

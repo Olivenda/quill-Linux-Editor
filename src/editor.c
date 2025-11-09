@@ -29,7 +29,7 @@ char **loadFile(const char *filename, int *line_count) {
     }
 
     if (fstat(fileno(fp), &st) != 0 || st.st_size == 0) {
-        // empty file
+        
         fclose(fp);
         char **lines = malloc(sizeof(char*) * 4);
         lines[0] = strdup("");
@@ -73,7 +73,6 @@ char **loadFile(const char *filename, int *line_count) {
         }
     }
 
-    // trailing data after last newline
     if (start <= filebuf + read) {
         size_t len = strlen(start);
         char *line = malloc(len + 1);
@@ -118,11 +117,11 @@ void saveFile(const char *filename, char **lines, int line_count) {
         }
     }
 
-    // compute total size and build a single buffer to minimize I/O calls
+    
     size_t total = 0;
     for (int i = 0; i < line_count; i++) {
         total += strlen(lines[i]);
-        total += 1; // newline
+        total += 1; 
     }
 
     char *outbuf = malloc(total + 1);
@@ -143,7 +142,7 @@ void saveFile(const char *filename, char **lines, int line_count) {
         return;
     }
 
-    // set full buffering for fewer system calls
+    
     static char filebuf[8192];
     setvbuf(fp, filebuf, _IOFBF, sizeof(filebuf));
 
@@ -152,12 +151,12 @@ void saveFile(const char *filename, char **lines, int line_count) {
     free(outbuf);
 }
 
-// --- Syntax Highlighting ---
-
 typedef struct {
     const char *word;
     int color;
 } KeywordColor;
+
+// --- Syntax Highlighting ---
 
 KeywordColor keyword_colors[] = {
     {"int", 5}, {"char", 5}, {"return", 4}, {"if", 5}, {"else", 5},
@@ -189,7 +188,7 @@ void printHighlightedLine(WINDOW *pad, int y, int x, const char *line) {
     int i = 0;
     int len = strlen(line);
     while (i < len) {
-        // Comment
+        
         if (line[i] == '/' && i+1 < len && line[i+1] == '/') {
             wattron(pad, COLOR_PAIR(8));
             mvwprintw(pad, y, x+i, "%s", line+i);
@@ -197,7 +196,7 @@ void printHighlightedLine(WINDOW *pad, int y, int x, const char *line) {
             break;
         }
 
-        // String literal
+        
         if (line[i] == '"') {
             int start = i++;
             while (i < len && (line[i] != '"' || line[i-1] == '\\')) i++;
@@ -208,7 +207,7 @@ void printHighlightedLine(WINDOW *pad, int y, int x, const char *line) {
             continue;
         }
 
-        // Number
+        
         if (isdigit(line[i]) && (i == 0 || !isalnum(line[i-1]))) {
             int start = i;
             while (i < len && (isdigit(line[i]) || line[i]=='.')) i++;
@@ -218,7 +217,7 @@ void printHighlightedLine(WINDOW *pad, int y, int x, const char *line) {
             continue;
         }
 
-        // Word (potential keyword)
+        
         if (isalpha(line[i]) || line[i]=='_') {
             int start = i;
             while (i < len && (isalnum(line[i]) || line[i]=='_')) i++;
@@ -233,7 +232,7 @@ void printHighlightedLine(WINDOW *pad, int y, int x, const char *line) {
             continue;
         }
 
-        // Regular char
+        
         mvwaddch(pad, y, x+i, line[i]);
         i++;
     }
@@ -278,7 +277,7 @@ void ensure_lines_capacity(char ***lines_ptr, int *capacity, int min_needed) {
         *lines_ptr = tmp;
         *capacity = newcap;
     } else {
-        // allocation failure: keep old capacity (best-effort)
+        
     }
 }
 
@@ -286,11 +285,11 @@ void nanoEditor(const char *filename) {
     int line_count;
     char **lines = loadFile(filename, &line_count);
 
-    // ensure we have headroom for editing
+    
     int lines_capacity = line_count + 256;
     if (lines_capacity < 1024) lines_capacity = 1024;
     char **tmp = realloc(lines, sizeof(char*) * lines_capacity);
-    if (tmp) lines = tmp; // if realloc failed, keep original (low-memory fallback)
+    if (tmp) lines = tmp; 
 
     int row = 0, col = 0, scroll_offset = 0;
     int modified = 0;
@@ -491,11 +490,11 @@ void nanoEditor(const char *filename) {
                     int newlen = (int)len + 1;
                     char *new_line = malloc(newlen + 1);
                     if (new_line) {
-                        // copy left part
+                        
                         if (col > 0) memcpy(new_line, lines[row], col);
-                        // insert char
+                        
                         new_line[col] = (char)ch;
-                        // copy right part including null terminator
+                        
                         memcpy(new_line + col + 1, lines[row] + col, len - col + 1);
                         free(lines[row]);
                         lines[row] = new_line;

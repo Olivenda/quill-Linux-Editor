@@ -42,7 +42,6 @@ The following shortcuts are available during editing:
 
 - **Ctrl+X** – save the current file and exit.
 - **Ctrl+S** – save without exiting.
-- **Ctrl+Q** – quit the editor. If there are unsaved changes you will be prompted to press **Ctrl+Q** again.
 - **Arrow keys** – navigate within the document.
 
 The status bar lists additional keys (**Ctrl+F** for search and **Ctrl+G** for jumping to a line), though these features are currently unimplemented.

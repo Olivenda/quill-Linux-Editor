@@ -1,3 +1,3 @@
-# Quill Linux Editor – Dokumentation
+# Quill Linux Editor – Documentation
 
-Willkommen zur offiziellen Dokumentation des **Quill Linux Editors**.
+Welcome to the Documentation of  **Quill Linux Editors**.

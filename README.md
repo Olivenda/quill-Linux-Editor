@@ -39,7 +39,7 @@ Debian / Ubuntu:
 2.	Download quill.deb.
 3.	Open your terminal in the Downloads folder and run:
 
-	sudo apt install quill.deb
+		sudo apt install quill.deb
 
 
 

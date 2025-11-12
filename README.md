@@ -1,4 +1,3 @@
-Here’s the full, ready-to-use Markdown file you can copy directly into your README.md:
 
 ⸻
 

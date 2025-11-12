@@ -29,7 +29,7 @@ Fedora:
 	2.	Download quill.rpm.
 	3.	Open your terminal in the Downloads folder and run:
 
-sudo dnf install quill.rpm
+	sudo dnf install quill.rpm
 
 
 
@@ -39,7 +39,7 @@ Debian / Ubuntu:
 	2.	Download quill.deb.
 	3.	Open your terminal in the Downloads folder and run:
 
-sudo apt install quill.deb
+	sudo apt install quill.deb
 
 
 
@@ -49,7 +49,7 @@ sudo apt install quill.deb
 
 To open a file with the editor:
 
-quill <filename>
+	quill <filename>
 
 
 ⸻
@@ -70,7 +70,7 @@ Arrow Keys	Navigate through text
 
 To compile manually:
 
-make
+	make
 
 The source code is located in the src/ directory.
 

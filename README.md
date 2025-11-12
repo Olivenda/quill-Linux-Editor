@@ -1,58 +1,89 @@
-# Editor
+Here’s the full, ready-to-use Markdown file you can copy directly into your README.md:
 
-## Overview
-This project is an open-source template created by Olivenda. It is designed to help developers streamline their workflows and create efficient solutions quickly.
+⸻
 
-## License
+📝 Editor
 
-This project is licensed under the [MIT License](LICENSE), with the following conditions:
+Overview
 
-1. **Attribution**: If you use this template, you must credit **Olivenda** as the original creator of the template in your project’s documentation.
-   
-2. **Non-Commercial Use**: You are **not allowed** to sell this template or any project derived from it. It is intended for personal or collaborative use only. Commercial usage, distribution, or resale is strictly prohibited.
+Editor is an open-source text editor created by Olivenda, designed to help developers write, edit, and manage code efficiently.
+It focuses on simplicity, speed, and flexibility — ideal for lightweight workflows or terminal-based editing.
 
-3. **Open-Source**: You may modify, distribute, and use this template as long as you adhere to the above conditions.
+⸻
 
-## How to Download the Editor
+📄 License
 
-Fedora :
-Goto the Newest Release
-Download quill.rpm
-Open Terminal in your Downloads Folder and type:
+This project is distributed under the MIT License￼ with the following conditions:
+	1.	Attribution – You must credit Olivenda as the original creator in your project documentation.
+	2.	Non-Commercial Use – Selling this editor or derived projects is prohibited. It is intended for personal or collaborative use only.
+	3.	Open Source – You may freely modify and distribute the project as long as the above conditions are respected.
 
-	sudo dnf install quill.rpm
+© 2025 Olivenda. All rights reserved.
 
-Debian/Ubuntu:
-Goto the Newest Release
-Download quill.deb
-Open Terminal in your Donwloads Folder and type:
+⸻
 
-	sudo apt install quill.deb
+📦 Installation
 
+Fedora
+	1.	Go to the latest release on GitHub.
+	2.	Download quill.rpm.
+	3.	Open your terminal in the Downloads folder and run:
 
-
-## Launching the Editor
-
-1. Run the editor with the file you want to edit:
-   ```bash
-   quill <filename> 
-   ```
-
-## Key Bindings
-
-The following shortcuts are available during editing:
-
-- **Ctrl+X** - ask you to save if you haven't Already
-- **Ctrl+S** – save file
-- **Ctrl+G** - Goto a specific line
-- **Ctrl+F** - Find a specific Word 
-- **Arrow keys** – navigating around the file
+sudo dnf install quill.rpm
 
 
 
-   
-For any questions or inquiries, feel free to reach out to Olivenda via [Priviliq5@gmail.com].
-© 2025 Olivenda. All Rights Reserved.
+Debian / Ubuntu
+	1.	Go to the latest release on GitHub.
+	2.	Download quill.deb.
+	3.	Open your terminal in the Downloads folder and run:
 
-## Build
-Run `make` to compile the editor. The source code is located in the `src/` directory.
+sudo apt install quill.deb
+
+
+
+⸻
+
+🚀 Launching the Editor
+
+To open a file with the editor:
+
+quill <filename>
+
+
+⸻
+
+⌨️ Key Bindings
+
+Shortcut	Action
+Ctrl + X	Prompt to save and exit
+Ctrl + S	Save current file
+Ctrl + G	Go to a specific line
+Ctrl + F	Find a word or phrase
+Arrow Keys	Navigate through text
+
+
+⸻
+
+🛠️ Build from Source
+
+To compile manually:
+
+make
+
+The source code is located in the src/ directory.
+
+⸻
+
+💬 Contact
+
+For questions or inquiries, contact Olivenda at:
+📧 Priviliq5@gmail.com￼
+
+⸻
+
+Editor by Olivenda — simple, fast, and open for everyone.
+
+⸻
+
+Would you like me to add badges (e.g., “Build Status”, “License: MIT”, “Latest Release”) and automatic table of contents links for GitHub rendering?

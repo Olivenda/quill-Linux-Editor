@@ -25,9 +25,9 @@ This project is distributed under the MIT License￼ with the following conditio
 
 Fedora:
 
-	1.	Go to the latest release on GitHub.
-	2.	Download quill.rpm.
-	3.	Open your terminal in the Downloads folder and run:
+1.Go to the latest release on GitHub.
+2.Download quill.rpm.
+3.Open your terminal in the Downloads folder and run:
 
 	sudo dnf install quill.rpm
 
@@ -35,9 +35,9 @@ Fedora:
 
 Debian / Ubuntu:
 
-	1.	Go to the latest release on GitHub.
-	2.	Download quill.deb.
-	3.	Open your terminal in the Downloads folder and run:
+1.	Go to the latest release on GitHub.
+2.	Download quill.deb.
+3.	Open your terminal in the Downloads folder and run:
 
 	sudo apt install quill.deb
 

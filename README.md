@@ -29,6 +29,8 @@ Open Terminal in your Donwloads Folder and type:
 
 	sudo apt install quill.deb
 
+
+
 ## Launching the Editor
 
 1. Run the editor with the file you want to edit:
@@ -40,15 +42,12 @@ Open Terminal in your Donwloads Folder and type:
 
 The following shortcuts are available during editing:
 
-- **Ctrl+X** – save the current file and exit.
-- **Ctrl+S** – save without exiting.
-- **Arrow keys** – navigate within the document.
+- **Ctrl+X** - ask you to save if you haven't Already
+- **Ctrl+S** – save file
+- **Ctrl+G** - Goto a specific line
+- **Ctrl+F** - Find a specific Word 
+- **Arrow keys** – navigating around the file
 
-The status bar lists additional keys (**Ctrl+F** for search and **Ctrl+G** for jumping to a line), though these features are currently unimplemented.
-
-## Update Script Security
-
-The `update.sh` script downloads code from the internet using `wget` and installs it on your system. Review the script before running it to ensure you are comfortable with the operations it performs.
 
 
    

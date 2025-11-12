@@ -1,46 +1,49 @@
-# Security Policy
+# 🛡️ Security Policy
 
 ## Supported Versions
 
+| Version | Support Status |
+|----------|----------------|
+| 0.0.1    | ❌ Unsupported  |
+| 0.0.2    | ❌ Unsupported  |
+| 0.1      | ✅ Supported    |
+| 0.1.1    | ✅ Supported    |
+| 0.1.4    | ✅ Supported    |
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 0.0.1   | :x:                |
-| 0.0.2   | :x:                |
-| 0.1     | ✅                 |
-| 0.1.1   | ✅                 |
-| 0.1.4   | ✅                 |
- 
+---
+
 ## Reporting a Vulnerability
 
-If you have discovered a security vulnerability, please report it promptly to ensure the safety and integrity of our systems.
-How to Report
+If you discover a security vulnerability, please report it promptly to help maintain the integrity of our systems.
 
-    Send an email to Priviliq5@gmail.com with the subject line "Security Vulnerability Report".
+### How to Report
 
-    Include a detailed description of the vulnerability, including steps to reproduce it, potential impact, and any supporting evidence (e.g., screenshots, logs, or proof-of-concept code).
+1. Send an email to **Priviliq5@gmail.com** with the subject line:  
+   **“Security Vulnerability Report”**
+2. Include:
+   - A clear description of the issue  
+   - Steps to reproduce  
+   - Potential impact  
+   - Supporting evidence (screenshots, logs, or proof-of-concept code)
+3. Optionally include a suggested fix or mitigation.
 
-    If possible, provide a suggested fix or mitigation.
+---
 
-Response Process
+### Response Process
 
-    You will receive an acknowledgment within 48 hours.
+- **Acknowledgment:** within **48 hours**  
+- **Initial update:** within **7 days**  
+- **Resolution:** confirmed issues will be addressed promptly with progress updates  
+- **Disclosure:** coordinated public disclosure once resolved, if applicable
 
-    Our security team will investigate the issue and provide an update within 7 days.
+---
 
-    If the vulnerability is confirmed, we will work on a resolution and communicate progress updates.
+### What to Expect
 
-    Once resolved, we will inform you and, if applicable, discuss public disclosure.
+- Accepted reports are prioritized by **severity** and **impact**  
+- Declined reports will receive an explanation and, when possible, guidance  
+- Responsible disclosure is appreciated and may be **credited** for valid findings
 
-What to Expect
+---
 
-    If the vulnerability is accepted, we will prioritize a fix based on severity and impact.
-
-    If the vulnerability is declined, we will provide a reason and, where possible, suggest alternative measures.
-
-    Responsible disclosure is appreciated, and we may credit valid reports depending on their impact.
-
-We appreciate your cooperation in keeping our platform secure. Thank you for your contribution!
-
-
-
+Thank you for helping keep our platform and community secure.

@@ -1,4 +1,4 @@
-
+# Quill Editor
 ⸻
 
 📝 Editor
@@ -23,7 +23,8 @@ This project is distributed under the MIT License￼ with the following conditio
 
 📦 Installation
 
-Fedora
+Fedora:
+
 	1.	Go to the latest release on GitHub.
 	2.	Download quill.rpm.
 	3.	Open your terminal in the Downloads folder and run:
@@ -32,7 +33,8 @@ sudo dnf install quill.rpm
 
 
 
-Debian / Ubuntu
+Debian / Ubuntu:
+
 	1.	Go to the latest release on GitHub.
 	2.	Download quill.deb.
 	3.	Open your terminal in the Downloads folder and run:
@@ -85,4 +87,3 @@ Editor by Olivenda — simple, fast, and open for everyone.
 
 ⸻
 
-Would you like me to add badges (e.g., “Build Status”, “License: MIT”, “Latest Release”) and automatic table of contents links for GitHub rendering?

@@ -28,7 +28,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential ncurses-dev
+          sudo apt install -y build-essential ncurses-dev gcc
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
@@ -37,8 +37,7 @@ jobs:
 
       - name: Build project
         run: |
-          make clean || true
-          make
+          gcc src/editor.c -o quill -lncurses
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4

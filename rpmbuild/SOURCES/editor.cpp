@@ -4,6 +4,7 @@
 #include <string>
 #include <algorithm>
 #include <ncurses.h>
+#include <cctype>
 #ifdef KEY_SAVE
 #undef KEY_SAVE
 #endif
@@ -175,8 +176,17 @@ bool searchInLines(const vector<string>& lines, const string& query, int& row, i
         }
     }
     return false;
-    init_pair(7, COLOR_RED, COLOR_BLACK);
-    init_pair(8, COLOR_CYAN, COLOR_BLACK);
+}
+
+void initializeColorPairs() {
+    init_pair(1, COLOR_CYAN, COLOR_BLACK);      // line numbers
+    init_pair(2, COLOR_WHITE, COLOR_BLACK);     // default text
+    init_pair(3, COLOR_BLUE, COLOR_BLACK);      // types and casts
+    init_pair(4, COLOR_MAGENTA, COLOR_BLACK);   // control flow / keywords
+    init_pair(5, COLOR_YELLOW, COLOR_BLACK);    // declarations / namespaces
+    init_pair(6, COLOR_GREEN, COLOR_BLACK);     // std library and functions
+    init_pair(7, COLOR_RED, COLOR_BLACK);       // strings and numbers
+    init_pair(8, COLOR_CYAN, COLOR_BLACK);      // comments
 }
 void disableFlicker() {
     leaveok(stdscr, TRUE);
@@ -211,6 +221,7 @@ vector<string> preloadFileContent(const string& filename) {
     return lines;
 }
 void printHighlightedLine(WINDOW* pad, int y, int x, const string& line) {
+    wattron(pad, COLOR_PAIR(2));
     int i = 0;
     while (i < (int)line.size()) {
         if (line[i] == '/' && i+1 < (int)line.size() && line[i+1] == '/') {
@@ -262,11 +273,15 @@ void printHighlightedLine(WINDOW* pad, int y, int x, const string& line) {
         mvwaddch(pad, y, x+i, line[i]);
         i++;
     }
+    wattroff(pad, COLOR_PAIR(2));
 }
 
 #undef nanoEditor
 void nanoEditor(const string& filename) {
-    vector<string> lines = loadFile(filename);
+    vector<string> lines = preloadFileContent(filename);
+    if (lines.empty()) {
+        lines = loadFile(filename);
+    }
     int row = 0, col = 0;
     int scroll_offset = 0;
     bool modified = false;
@@ -280,8 +295,8 @@ void nanoEditor(const string& filename) {
     keypad(stdscr, TRUE);
     set_escdelay(25);
 
-    init_pair(1, COLOR_CYAN, COLOR_BLACK);
-    init_pair(2, COLOR_WHITE, COLOR_BLACK);
+    initializeColorPairs();
+    disableFlicker();
 
     int max_row, max_col;
     getmaxyx(stdscr, max_row, max_col);

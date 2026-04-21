@@ -69,7 +69,7 @@ Arrow Keys	Navigate through text
 
 To compile manually:
 
-	make
+	gcc -O2 -o quill editor.c -lncurses
 
 The source code is located in the src/ directory.
 

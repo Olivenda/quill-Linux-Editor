@@ -1,7 +1,7 @@
 # Quill Editor
 ⸻
 
-📝 Editor
+Editor
 
 Overview
 
@@ -10,18 +10,17 @@ It focuses on simplicity, speed, and flexibility — ideal for lightweight workf
 
 ⸻
 
-📄 License
+License
 
 This project is distributed under the MIT License￼ with the following conditions:
 	1.	Attribution – You must credit Olivenda as the original creator in your project documentation.
 	2.	Non-Commercial Use – Selling this editor or derived projects is prohibited. It is intended for personal or collaborative use only.
 	3.	Open Source – You may freely modify and distribute the project as long as the above conditions are respected.
 
-© 2025 Olivenda. All rights reserved.
 
 ⸻
 
-📦 Installation
+Installation
 
 Fedora:
 
@@ -45,7 +44,7 @@ Debian / Ubuntu:
 
 ⸻
 
-🚀 Launching the Editor
+Launching the Editor
 
 To open a file with the editor:
 
@@ -54,7 +53,7 @@ To open a file with the editor:
 
 ⸻
 
-⌨️ Key Bindings
+Key Bindings
 
 Shortcut	Action
 Ctrl + X	Prompt to save and exit
@@ -66,7 +65,7 @@ Arrow Keys	Navigate through text
 
 ⸻
 
-🛠️ Build from Source
+ Build from Source
 
 To compile manually:
 
@@ -76,7 +75,7 @@ The source code is located in the src/ directory.
 
 ⸻
 
-💬 Contact
+Contact
 
 For questions or inquiries, contact Olivenda at:
 📧 Priviliq5@gmail.com￼

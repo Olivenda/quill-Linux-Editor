@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -947,13 +948,15 @@ void nanoEditor(const char *filename) {
         case KEY_PPAGE:
             row = (row - (max_row-2) > 0) ? row - (max_row-2) : 0;
             { int llen=(int)strlen(lb.data[row]);
-              if (col>llen) col=llen; sticky_col=col; }
+              if (col>llen) col=llen;
+              sticky_col=col; }
             break;
         case KEY_NPAGE:
             row = (row + (max_row-2) < lb.count-1) ?
                    row + (max_row-2) : lb.count-1;
             { int llen=(int)strlen(lb.data[row]);
-              if (col>llen) col=llen; sticky_col=col; }
+              if (col>llen) col=llen;
+              sticky_col=col; }
             break;
 
         /* ── Backspace ── */

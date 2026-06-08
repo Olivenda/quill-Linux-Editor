@@ -9,11 +9,15 @@
 #include <unistd.h>
 #include <errno.h>
 
-#define MAX_LINES    10000
-#define MAX_LINE_LEN 4096
-#define UNDO_LIMIT   256
-#define LINE_NUM_W   6    /* "NNNNN " */
-#define TAB_WIDTH    4
+#define MAX_LINES     10000
+#define MAX_LINE_LEN  4096
+#define UNDO_LIMIT    256
+#define LINE_NUM_W    6    /* "NNNNN " */
+#define TAB_WIDTH     4
+#define MAX_TABS      8
+#define MAX_BOOKMARKS 64
+#define MAX_FNAME     1024
+#define TAB_BAR_H     1   /* rows reserved for the tab bar */
 
 /* ─── Utility ────────────────────────────────────────────────────────────── */
 
@@ -125,14 +129,6 @@ static LineBuf lb_clone(const LineBuf *src) {
 }
 
 /* ─── Undo / Redo  (push-AFTER semantics) ───────────────────────────────── */
-/*
- * Every edit calls undo_push AFTER modifying lb.  The stack stores snapshots
- * of lb in order, with pos pointing one past the "current" snapshot.  The
- * initial sentinel push (before any edit) lets undo_do stop at pos==1.
- *
- *   undo_do: load entry[pos-2] after pos--  (go back one step)
- *   redo_do: load entry[pos]   then pos++   (go forward one step)
- */
 
 typedef struct {
     LineBuf snap;
@@ -141,9 +137,9 @@ typedef struct {
 
 typedef struct {
     UndoEntry entries[UNDO_LIMIT];
-    int       head;  /* index of next write slot */
-    int       size;  /* number of valid entries  */
-    int       pos;   /* logical position (1..size); pos==size → newest */
+    int       head;
+    int       size;
+    int       pos;
 } UndoStack;
 
 static int undo_idx(const UndoStack *us, int logical) {
@@ -152,14 +148,13 @@ static int undo_idx(const UndoStack *us, int logical) {
 }
 
 static void undo_push(UndoStack *us, const LineBuf *lb, int row, int col) {
-    /* drop redo entries above pos */
     for (int i = us->pos; i < us->size; i++)
         lb_free(&us->entries[undo_idx(us, i)].snap);
     us->size = us->pos;
 
     int idx = us->head;
     if (us->size == UNDO_LIMIT)
-        lb_free(&us->entries[idx].snap);   /* overwrite oldest */
+        lb_free(&us->entries[idx].snap);
     else
         us->size++;
 
@@ -223,14 +218,13 @@ static int saveFile(const char *filename, const LineBuf *lb,
     getmaxyx(stdscr, max_row, max_col);
     (void)max_row;
 
-    /* Only ask to overwrite when writing to a path we did NOT load from. */
     if (!loaded_from_disk && fileExists(filename)) {
         if (!confirmOverwrite(filename, max_col)) return 1;
     }
 
     size_t total = 0;
     for (int i = 0; i < lb->count; i++)
-        total += strlen(lb->data[i]) + 1;   /* +1 for '\n' */
+        total += strlen(lb->data[i]) + 1;
 
     char *outbuf = safe_malloc(total + 1);
     char *p = outbuf;
@@ -376,7 +370,6 @@ normal:
                 }
                 i++;
             }
-            /* comment spans to next line */
             mvwprintw(pad, y, LINE_NUM_W + start, "%s", line + start);
             wattroff(pad, COLOR_PAIR(9));
             ret_ml = 1;
@@ -491,7 +484,7 @@ normal:
     return ret_ml;
 }
 
-/* ─── Status bar ─────────────────────────────────────────────────────────── */
+/* ─── File type label ────────────────────────────────────────────────────── */
 
 static const char *file_type_label(const char *filename) {
     const char *dot = strrchr(filename, '.');
@@ -516,43 +509,8 @@ static const char *file_type_label(const char *filename) {
     return "Plain";
 }
 
-static void drawStatusBar(const char *filename, int modified,
-                          int row, int col, int total_lines, int max_col,
-                          const char *msg)
-{
-    attron(A_REVERSE);
-    mvhline(LINES-1, 0, ' ', max_col);
-
-    char left[512];
-    snprintf(left, sizeof(left), " %s [%s] %s",
-             filename, file_type_label(filename),
-             modified ? "[Modified]" : "[Saved]");
-    mvprintw(LINES-1, 0, "%s", left);
-
-    const char *keys =
-        "^S Save  ^Z Undo  ^Y Redo  ^F Find  ^G Goto  ^K Cut  ^U Paste  ^X Exit";
-    int kpos = (max_col - (int)strlen(keys)) / 2;
-    if (kpos > (int)strlen(left) + 1)
-        mvprintw(LINES-1, kpos, "%s", keys);
-
-    char right[80];
-    snprintf(right, sizeof(right), "Ln %d/%d  Col %d ", row+1, total_lines, col+1);
-    int rpos = max_col - (int)strlen(right);
-    if (rpos < 0) rpos = 0;
-    mvprintw(LINES-1, rpos, "%s", right);
-
-    if (msg && msg[0]) {
-        int mpos = rpos - (int)strlen(msg) - 2;
-        if (mpos > (int)strlen(left) + 1)
-            mvprintw(LINES-1, mpos, "%s", msg);
-    }
-    attroff(A_REVERSE);
-    refresh();
-}
-
 /* ─── Display column helper ──────────────────────────────────────────────── */
 
-/* Returns visual screen column for byte offset into line (tabs expanded). */
 static int byte_to_display_col(const char *line, int byte_col) {
     int dc = 0;
     for (int i = 0; i < byte_col && line[i]; i++) {
@@ -593,23 +551,238 @@ static void word_jump_left(const LineBuf *lb, int *row, int *col) {
     *row = r; *col = c;
 }
 
+/* ─── Tab struct ─────────────────────────────────────────────────────────── */
+/*
+ * Each open file gets one Tab.  All per-buffer state lives here so the
+ * editor can switch between tabs without losing any context.
+ */
+typedef struct {
+    LineBuf   lb;
+    char      filename[MAX_FNAME];
+    int       row, col;
+    int       scroll_row, scroll_col;
+    int       sticky_col;
+    int       modified;
+    int       loaded_from_disk;
+    UndoStack us;
+    char     *cut_buffer;
+    int       bookmarks[MAX_BOOKMARKS];
+    int       bmark_count;
+    int       last_home_row, last_home_col_nws;
+} Tab;
+
+static Tab tabs[MAX_TABS];
+static int tab_count = 0;
+static int cur_tab   = 0;
+
+/* Split-view state: two panes showing different tabs side by side. */
+static int split_on    = 0;  /* 1 when split is active            */
+static int split_right = 1;  /* tab index shown in the right pane */
+static int split_focus = 0;  /* 0 = left pane, 1 = right pane     */
+
+static void tab_init(Tab *t, const char *fname) {
+    memset(t, 0, sizeof(*t));
+    snprintf(t->filename, MAX_FNAME, "%s", fname);
+    t->lb = lb_load(fname, &t->loaded_from_disk);
+    lb_ensure(&t->lb, t->lb.count + 512);
+    t->last_home_row     = -1;
+    t->last_home_col_nws = -1;
+    undo_push(&t->us, &t->lb, 0, 0);
+}
+
+static void tab_free(Tab *t) {
+    lb_free(&t->lb);
+    undo_free(&t->us);
+    free(t->cut_buffer);
+    t->cut_buffer = NULL;
+}
+
+/* ─── Bookmark helpers ───────────────────────────────────────────────────── */
+
+static int bmark_has(const Tab *t, int line) {
+    for (int i = 0; i < t->bmark_count; i++)
+        if (t->bookmarks[i] == line) return 1;
+    return 0;
+}
+
+static void bmark_toggle(Tab *t, int line) {
+    for (int i = 0; i < t->bmark_count; i++) {
+        if (t->bookmarks[i] == line) {
+            for (int j = i; j < t->bmark_count - 1; j++)
+                t->bookmarks[j] = t->bookmarks[j+1];
+            t->bmark_count--;
+            return;
+        }
+    }
+    if (t->bmark_count < MAX_BOOKMARKS)
+        t->bookmarks[t->bmark_count++] = line;
+}
+
+/* Returns the nearest bookmarked line after from_line, wrapping around. */
+static int bmark_next(const Tab *t, int from_line) {
+    int best = -1;
+    for (int i = 0; i < t->bmark_count; i++) {
+        int bl = t->bookmarks[i];
+        if (bl > from_line && (best == -1 || bl < best)) best = bl;
+    }
+    if (best == -1) {
+        /* wrap */
+        for (int i = 0; i < t->bmark_count; i++) {
+            int bl = t->bookmarks[i];
+            if (best == -1 || bl < best) best = bl;
+        }
+    }
+    return best;
+}
+
+/* ─── Status bar ─────────────────────────────────────────────────────────── */
+
+static void drawStatusBar(const char *filename, int modified,
+                          int row, int col, int total_lines, int max_col,
+                          const char *msg, int tab_idx, int n_tabs)
+{
+    attron(A_REVERSE);
+    mvhline(LINES-1, 0, ' ', max_col);
+
+    char left[MAX_FNAME + 64];
+    snprintf(left, sizeof(left), " %s [%s] %s",
+             filename, file_type_label(filename),
+             modified ? "[Modified]" : "[Saved]");
+    mvprintw(LINES-1, 0, "%s", left);
+
+    const char *keys =
+        "^S Save  ^Z Undo  ^Y Redo  ^F Find  ^G Goto  ^K Cut  ^U Paste  ^X Exit";
+    int kpos = (max_col - (int)strlen(keys)) / 2;
+    if (kpos > (int)strlen(left) + 1)
+        mvprintw(LINES-1, kpos, "%s", keys);
+
+    char right[96];
+    snprintf(right, sizeof(right), "Tab %d/%d  Ln %d/%d  Col %d ",
+             tab_idx + 1, n_tabs, row + 1, total_lines, col + 1);
+    int rpos = max_col - (int)strlen(right);
+    if (rpos < 0) rpos = 0;
+    mvprintw(LINES-1, rpos, "%s", right);
+
+    if (msg && msg[0]) {
+        int mpos = rpos - (int)strlen(msg) - 2;
+        if (mpos > (int)strlen(left) + 1)
+            mvprintw(LINES-1, mpos, "%s", msg);
+    }
+    attroff(A_REVERSE);
+    refresh();
+}
+
+/* ─── Tab bar ────────────────────────────────────────────────────────────── */
+/*
+ * Renders the top row showing all open tabs.
+ * Active tab (receives input) is bold + reversed.
+ * The tab shown in the right split pane gets underlined.
+ * Modified tabs show a '*' marker.
+ */
+static void drawTabBar(int max_col) {
+    attron(COLOR_PAIR(11));
+    mvhline(0, 0, ' ', max_col);
+
+    int x = 0;
+    for (int i = 0; i < tab_count; i++) {
+        const char *bn = strrchr(tabs[i].filename, '/');
+        bn = bn ? bn + 1 : tabs[i].filename;
+
+        char label[36];
+        snprintf(label, sizeof(label), " %.24s%s ",
+                 bn, tabs[i].modified ? "*" : " ");
+
+        int is_active      = (i == cur_tab && (!split_on || split_focus == 0));
+        int is_split_focus = (split_on && i == split_right && split_focus == 1);
+        int is_split_other = (split_on && i == split_right && split_focus == 0);
+        int is_cur_nofocus = (i == cur_tab && split_on && split_focus == 1);
+
+        attroff(COLOR_PAIR(11));
+        if (is_active) {
+            attron(A_BOLD | COLOR_PAIR(10));
+        } else if (is_split_focus) {
+            attron(A_BOLD | COLOR_PAIR(10) | A_UNDERLINE);
+        } else if (is_split_other || is_cur_nofocus) {
+            attron(COLOR_PAIR(10));
+        } else {
+            attron(COLOR_PAIR(11));
+        }
+
+        if (x + (int)strlen(label) < max_col - 50)
+            mvprintw(0, x, "%s", label);
+
+        attroff(A_BOLD | A_UNDERLINE | COLOR_PAIR(10) | COLOR_PAIR(11));
+        attron(COLOR_PAIR(11));
+
+        x += (int)strlen(label);
+        if (i < tab_count - 1 && x < max_col - 50) {
+            mvaddch(0, x++, ACS_VLINE);
+        }
+    }
+
+    /* Keyboard hint aligned to the right */
+    const char *hint = " F2/F3:tabs  F4:open  ^W:close  F5:split  F6:swap  F7:mark  F8:next ";
+    int hpos = max_col - (int)strlen(hint);
+    if (hpos > x + 2)
+        mvprintw(0, hpos, "%s", hint);
+
+    attroff(COLOR_PAIR(11));
+}
+
+/* ─── Pane rendering ─────────────────────────────────────────────────────── */
+/*
+ * Draws a single tab's content into pad and refreshes a rectangular region
+ * of the screen [top..bottom, left_col..right_col].
+ */
+static void drawPaneContent(WINDOW *pad, Tab *t,
+                             int top, int left_col, int bottom, int right_col)
+{
+    int visible = bottom - top + 1;
+
+    werase(pad);
+
+    /* Pre-scan multiline-comment state for lines above the viewport. */
+    int in_ml   = 0;
+    int prescan = t->scroll_row < t->lb.count ? t->scroll_row : t->lb.count;
+    for (int i = 0; i < prescan; i++) {
+        const char *l = t->lb.data[i];
+        int len = (int)strlen(l);
+        for (int j = 0; j < len; j++) {
+            if (!in_ml && l[j]=='/' && j+1<len && l[j+1]=='*') { in_ml=1; j++; }
+            else if (in_ml && l[j]=='*' && j+1<len && l[j+1]=='/') { in_ml=0; j++; }
+        }
+    }
+
+    int draw_limit = t->lb.count < MAX_LINES ? t->lb.count : MAX_LINES;
+    for (int i = t->scroll_row; i < draw_limit && i - t->scroll_row < visible; i++) {
+        int pr = i - t->scroll_row;
+
+        /* Bookmarked lines get a distinct line-number colour. */
+        if (bmark_has(t, i)) {
+            wattron(pad, COLOR_PAIR(12) | A_BOLD);
+            mvwprintw(pad, pr, 0, "%5d ", i + 1);
+            wattroff(pad, COLOR_PAIR(12) | A_BOLD);
+        } else {
+            wattron(pad, COLOR_PAIR(1));
+            mvwprintw(pad, pr, 0, "%5d ", i + 1);
+            wattroff(pad, COLOR_PAIR(1));
+        }
+
+        in_ml = printHighlightedLine(pad, pr, t->lb.data[i], in_ml);
+    }
+
+    pnoutrefresh(pad, 0, t->scroll_col, top, left_col, bottom, right_col);
+}
+
 /* ─── Editor main loop ───────────────────────────────────────────────────── */
 
-void nanoEditor(const char *filename) {
-    int loaded_from_disk = 0;
-    LineBuf lb = lb_load(filename, &loaded_from_disk);
-    lb_ensure(&lb, lb.count + 512);
-
-    int row = 0, col = 0;
-    int scroll_row = 0, scroll_col = 0;
-    int sticky_col = 0;
-    int modified   = 0;
-    char status_msg[256] = "";
-    char *cut_buffer = NULL;
-
-    /* Sentinel push: initial state before any edit. */
-    UndoStack us = {0};
-    undo_push(&us, &lb, 0, 0);
+void runEditor(const char *initial_file) {
+    tab_init(&tabs[0], initial_file);
+    tab_count   = 1;
+    cur_tab     = 0;
+    split_on    = 0;
+    split_right = 0;
+    split_focus = 0;
 
     initscr();
     start_color();
@@ -619,119 +792,286 @@ void nanoEditor(const char *filename) {
     keypad(stdscr, TRUE);
     set_escdelay(25);
 
-    init_pair(1, COLOR_CYAN,    -1);   /* line numbers */
-    init_pair(2, COLOR_WHITE,   -1);   /* default text */
-    init_pair(3, COLOR_YELLOW,  -1);   /* numbers / constants */
-    init_pair(4, COLOR_GREEN,   -1);   /* preprocessor */
-    init_pair(5, COLOR_MAGENTA, -1);   /* keywords / braces */
-    init_pair(6, COLOR_CYAN,    -1);   /* stdlib / parens */
-    init_pair(7, COLOR_RED,     -1);   /* strings / chars */
-    init_pair(8, COLOR_BLUE,    -1);   /* types */
-    init_pair(9, COLOR_GREEN,   -1);   /* comments */
+    /* Existing colour pairs (1–9 unchanged) */
+    init_pair(1,  COLOR_CYAN,    -1);
+    init_pair(2,  COLOR_WHITE,   -1);
+    init_pair(3,  COLOR_YELLOW,  -1);
+    init_pair(4,  COLOR_GREEN,   -1);
+    init_pair(5,  COLOR_MAGENTA, -1);
+    init_pair(6,  COLOR_CYAN,    -1);
+    init_pair(7,  COLOR_RED,     -1);
+    init_pair(8,  COLOR_BLUE,    -1);
+    init_pair(9,  COLOR_GREEN,   -1);
+    /* New colour pairs */
+    init_pair(10, COLOR_BLACK,   COLOR_CYAN);   /* tab bar: active/visible tab  */
+    init_pair(11, COLOR_WHITE,   COLOR_BLUE);   /* tab bar: background          */
+    init_pair(12, COLOR_YELLOW,  -1);           /* bookmarked line number       */
+    init_pair(13, COLOR_WHITE,   -1);           /* split divider                */
 
-    /* Map common Ctrl+arrow escape sequences to shift-arrow keycodes. */
     define_key("\033[1;5C", KEY_SRIGHT);
     define_key("\033[1;5D", KEY_SLEFT);
 
     int max_row, max_col;
     getmaxyx(stdscr, max_row, max_col);
-    WINDOW *pad = newpad(MAX_LINES, MAX_LINE_LEN + LINE_NUM_W + 16);
 
-    int last_home_row = -1, last_home_col_nws = -1;
+    WINDOW *pad_left  = newpad(MAX_LINES, MAX_LINE_LEN + LINE_NUM_W + 16);
+    WINDOW *pad_right = newpad(MAX_LINES, MAX_LINE_LEN + LINE_NUM_W + 16);
 
-#define PUSH_UNDO() undo_push(&us, &lb, row, col)
+    char status_msg[256] = "";
+
+#define CTAB (tabs[cur_tab])
 
     while (1) {
         getmaxyx(stdscr, max_row, max_col);
-        werase(pad);
 
-        /* Pre-scan multiline-comment state for lines above the viewport. */
-        int in_ml = 0;
-        int prescan = scroll_row < lb.count ? scroll_row : lb.count;
-        for (int i = 0; i < prescan; i++) {
-            const char *l = lb.data[i];
-            int len = (int)strlen(l);
-            for (int j = 0; j < len; j++) {
-                if (!in_ml && l[j]=='/' && j+1<len && l[j+1]=='*')
-                    { in_ml=1; j++; }
-                else if (in_ml && l[j]=='*' && j+1<len && l[j+1]=='/')
-                    { in_ml=0; j++; }
+        int content_top = TAB_BAR_H;
+        int content_bot = max_row - 2;
+        int split_col   = (max_col - 1) / 2;  /* column index of divider bar */
+
+        /* ── Draw tab bar ── */
+        drawTabBar(max_col);
+
+        /* ── Draw content pane(s) ── */
+        if (split_on && tab_count > 1) {
+            /* Guarantee split_right is a different, valid tab. */
+            if (split_right >= tab_count || split_right == cur_tab)
+                split_right = (cur_tab + 1) % tab_count;
+
+            drawPaneContent(pad_left,  &tabs[cur_tab],
+                            content_top, 0, content_bot, split_col - 1);
+
+            /* Divider */
+            attron(COLOR_PAIR(13) | A_DIM);
+            for (int r = content_top; r <= content_bot; r++)
+                mvaddch(r, split_col, ACS_VLINE);
+            attroff(COLOR_PAIR(13) | A_DIM);
+
+            drawPaneContent(pad_right, &tabs[split_right],
+                            content_top, split_col + 1, content_bot, max_col - 1);
+        } else {
+            split_on = 0;
+            drawPaneContent(pad_left, &tabs[cur_tab],
+                            content_top, 0, content_bot, max_col - 1);
+        }
+
+        /* ── Status bar: reflects the focused pane ── */
+        Tab *focused = (split_on && split_focus == 1) ? &tabs[split_right] : &CTAB;
+        int  focused_idx = (split_on && split_focus == 1) ? split_right : cur_tab;
+        drawStatusBar(focused->filename, focused->modified,
+                      focused->row, focused->col, focused->lb.count,
+                      max_col, status_msg, focused_idx, tab_count);
+
+        /* ── Cursor placement ── */
+        {
+            int dcol     = byte_to_display_col(focused->lb.data[focused->row],
+                                               focused->col);
+            int base_c, pane_right;
+            if (split_on && split_focus == 1) {
+                base_c     = split_col + 1;
+                pane_right = max_col - 1;
+            } else {
+                base_c     = 0;
+                pane_right = split_on ? split_col - 1 : max_col - 1;
             }
-        }
-
-        /* Draw visible lines into pad (guard against MAX_LINES overflow). */
-        int draw_limit = lb.count < MAX_LINES ? lb.count : MAX_LINES;
-        int visible    = max_row - 1;
-        for (int i = scroll_row;
-             i < draw_limit && i - scroll_row < visible; i++)
-        {
-            wattron(pad, COLOR_PAIR(1));
-            mvwprintw(pad, i - scroll_row, 0, "%5d ", i + 1);
-            wattroff(pad, COLOR_PAIR(1));
-            in_ml = printHighlightedLine(pad, i - scroll_row,
-                                         lb.data[i], in_ml);
-        }
-
-        prefresh(pad, 0, scroll_col, 0, 0, max_row - 2, max_col - 1);
-        drawStatusBar(filename, modified, row, col, lb.count, max_col,
-                      status_msg);
-
-        /* Position cursor (convert byte offset to visual column). */
-        {
-            int dcol      = byte_to_display_col(lb.data[row], col);
-            int screen_c  = (LINE_NUM_W + dcol) - scroll_col;
-            int screen_r  = row - scroll_row;
-            if (screen_c < 0) screen_c = 0;
-            if (screen_c >= max_col) screen_c = max_col - 1;
-            if (screen_r < 0) screen_r = 0;
-            if (screen_r > max_row - 2) screen_r = max_row - 2;
+            int screen_c = base_c + (LINE_NUM_W + dcol) - focused->scroll_col;
+            int screen_r = (focused->row - focused->scroll_row) + content_top;
+            if (screen_c < base_c)      screen_c = base_c;
+            if (screen_c > pane_right)  screen_c = pane_right;
+            if (screen_r < content_top) screen_r = content_top;
+            if (screen_r > content_bot) screen_r = content_bot;
             move(screen_r, screen_c);
         }
-        refresh();
+        doupdate();
 
         int ch = getch();
         status_msg[0] = '\0';
 
-        /* Reset smart-Home state on any key other than Home / ^A. */
+        /* Active tab pointer — keyboard input goes to the focused pane. */
+        Tab *t = (split_on && split_focus == 1) ? &tabs[split_right] : &CTAB;
+
+        /* Reset smart-Home state on any key other than Home / ^A */
         if (ch != 1 && ch != KEY_HOME) {
-            last_home_row     = -1;
-            last_home_col_nws = -1;
+            t->last_home_row     = -1;
+            t->last_home_col_nws = -1;
         }
 
-        /* ── Exit ^X ── */
-        if (ch == 24) {
-            if (modified) {
+#define TPUSH() undo_push(&t->us, &t->lb, t->row, t->col)
+
+        /* ══ Tab navigation ══════════════════════════════════════════════════ */
+
+        /* F2 – next tab */
+        if (ch == KEY_F(2)) {
+            if (!split_on || split_focus == 0) {
+                cur_tab = (cur_tab + 1) % tab_count;
+            } else {
+                split_right = (split_right + 1) % tab_count;
+                if (split_right == cur_tab)
+                    split_right = (split_right + 1) % tab_count;
+            }
+            continue;
+        }
+        /* F3 – previous tab */
+        if (ch == KEY_F(3)) {
+            if (!split_on || split_focus == 0) {
+                cur_tab = (cur_tab - 1 + tab_count) % tab_count;
+            } else {
+                split_right = (split_right - 1 + tab_count) % tab_count;
+                if (split_right == cur_tab)
+                    split_right = (split_right - 1 + tab_count) % tab_count;
+            }
+            continue;
+        }
+        /* F4 – open file in a new tab */
+        if (ch == KEY_F(4)) {
+            if (tab_count >= MAX_TABS) {
+                snprintf(status_msg, sizeof(status_msg),
+                         "Max %d tabs open", MAX_TABS);
+                continue;
+            }
+            char fname[MAX_FNAME] = "";
+            echo();
+            mvhline(LINES-1, 0, ' ', max_col);
+            mvprintw(LINES-1, 0, "Open file: ");
+            refresh();
+            mvgetnstr(LINES-1, 11, fname, MAX_FNAME - 1);
+            noecho();
+            if (!fname[0]) {
+                snprintf(status_msg, sizeof(status_msg), "Cancelled");
+                continue;
+            }
+            tab_init(&tabs[tab_count], fname);
+            cur_tab     = tab_count++;
+            split_focus = 0;
+            snprintf(status_msg, sizeof(status_msg), "Opened: %.200s", fname);
+            continue;
+        }
+        /* ^W (23) – close current tab */
+        if (ch == 23) {
+            if (tab_count == 1) {
+                snprintf(status_msg, sizeof(status_msg),
+                         "Cannot close last tab");
+                continue;
+            }
+            int close_idx = (split_on && split_focus == 1) ? split_right : cur_tab;
+            Tab *ct = &tabs[close_idx];
+            if (ct->modified) {
                 mvhline(LINES-2, 0, ' ', max_col);
-                mvprintw(LINES-2, 0, "Save changes? (y/n/ESC=cancel): ");
+                mvprintw(LINES-2, 0,
+                         "Tab modified – close without saving? (y/n): ");
                 refresh();
                 int sc = getch();
-                if (sc == 27) continue;   /* ESC: cancel exit */
+                if (sc != 'y' && sc != 'Y') {
+                    snprintf(status_msg, sizeof(status_msg), "Close cancelled");
+                    continue;
+                }
+            }
+            tab_free(&tabs[close_idx]);
+            for (int i = close_idx; i < tab_count - 1; i++)
+                tabs[i] = tabs[i+1];
+            memset(&tabs[tab_count-1], 0, sizeof(Tab));
+            tab_count--;
+            if (cur_tab >= tab_count) cur_tab = tab_count - 1;
+            if (split_right >= tab_count) split_right = 0;
+            if (split_on && split_right == cur_tab && tab_count > 1)
+                split_right = (cur_tab + 1) % tab_count;
+            split_focus = 0;
+            continue;
+        }
+        /* F5 – toggle split view */
+        if (ch == KEY_F(5)) {
+            if (tab_count < 2) {
+                snprintf(status_msg, sizeof(status_msg),
+                         "Need at least 2 tabs for split view (F4 to open)");
+                continue;
+            }
+            split_on = !split_on;
+            if (split_on) {
+                split_right = (cur_tab + 1) % tab_count;
+                split_focus = 0;
+                snprintf(status_msg, sizeof(status_msg), "Split view on");
+            } else {
+                split_focus = 0;
+                snprintf(status_msg, sizeof(status_msg), "Split view off");
+            }
+            continue;
+        }
+        /* F6 – swap active pane in split view */
+        if (ch == KEY_F(6)) {
+            if (!split_on) {
+                snprintf(status_msg, sizeof(status_msg),
+                         "Not in split mode (F5 to enable)");
+                continue;
+            }
+            split_focus ^= 1;
+            snprintf(status_msg, sizeof(status_msg),
+                     "Focus: %s pane", split_focus ? "right" : "left");
+            continue;
+        }
+        /* F7 – toggle bookmark on current line */
+        if (ch == KEY_F(7)) {
+            int had = bmark_has(t, t->row);
+            bmark_toggle(t, t->row);
+            snprintf(status_msg, sizeof(status_msg),
+                     had ? "Bookmark removed" : "Bookmarked Ln %d", t->row + 1);
+            continue;
+        }
+        /* F8 – jump to next bookmark */
+        if (ch == KEY_F(8)) {
+            if (t->bmark_count == 0) {
+                snprintf(status_msg, sizeof(status_msg),
+                         "No bookmarks (F7 to add)");
+                continue;
+            }
+            int nxt = bmark_next(t, t->row);
+            if (nxt >= 0) {
+                t->row = nxt;
+                int llen = (int)strlen(t->lb.data[t->row]);
+                if (t->col > llen) t->col = llen;
+                t->sticky_col = t->col;
+                snprintf(status_msg, sizeof(status_msg),
+                         "Bookmark: Ln %d", t->row + 1);
+            }
+            goto scroll_check;
+        }
+
+        /* ══ File operations ═════════════════════════════════════════════════ */
+
+        /* ^X – exit (saves all modified tabs with confirmation) */
+        if (ch == 24) {
+            int any_mod = 0;
+            for (int i = 0; i < tab_count; i++)
+                if (tabs[i].modified) any_mod = 1;
+            if (any_mod) {
+                mvhline(LINES-2, 0, ' ', max_col);
+                mvprintw(LINES-2, 0,
+                         "Save all modified tabs before exit? (y/n/ESC=cancel): ");
+                refresh();
+                int sc = getch();
+                if (sc == 27) continue;
                 if (sc == 'y' || sc == 'Y') {
-                    char err[256] = "";
-                    int rc = saveFile(filename, &lb, loaded_from_disk,
-                                      err, sizeof(err));
-                    if (rc == -1) {
-                        snprintf(status_msg, sizeof(status_msg), "%s", err);
-                        continue;
-                    } else if (rc == 1) {
-                        continue;   /* user cancelled overwrite */
+                    for (int i = 0; i < tab_count; i++) {
+                        if (tabs[i].modified) {
+                            char err[256] = "";
+                            saveFile(tabs[i].filename, &tabs[i].lb,
+                                     tabs[i].loaded_from_disk, err, sizeof(err));
+                        }
                     }
                 }
             }
             break;
         }
 
-        /* ── Save ^S ── */
+        /* ^S – save active tab */
         if (ch == 19) {
             char err[256] = "";
-            int rc = saveFile(filename, &lb, loaded_from_disk,
+            int rc = saveFile(t->filename, &t->lb, t->loaded_from_disk,
                               err, sizeof(err));
             if (rc == 0) {
-                modified = 0;
-                loaded_from_disk = 1;
+                t->modified        = 0;
+                t->loaded_from_disk = 1;
                 snprintf(status_msg, sizeof(status_msg),
-                         "Saved %d line%s", lb.count,
-                         lb.count == 1 ? "" : "s");
+                         "Saved %d line%s", t->lb.count,
+                         t->lb.count == 1 ? "" : "s");
             } else if (rc == -1) {
                 snprintf(status_msg, sizeof(status_msg), "%s", err);
             } else {
@@ -740,33 +1080,33 @@ void nanoEditor(const char *filename) {
             continue;
         }
 
-        /* ── Quit ^Q (no save prompt) ── */
+        /* ^Q – quit without save prompt */
         if (ch == 17) break;
 
-        /* ── Undo ^Z ── */
-        if (ch == 26) {
-            if (undo_do(&us, &lb, &row, &col))
+        /* ══ Undo / Redo ═════════════════════════════════════════════════════ */
+
+        if (ch == 26) {   /* ^Z undo */
+            if (undo_do(&t->us, &t->lb, &t->row, &t->col))
                 snprintf(status_msg, sizeof(status_msg), "Undo");
             else
                 snprintf(status_msg, sizeof(status_msg), "Nothing to undo");
-            sticky_col = col;
+            t->sticky_col = t->col;
             goto scroll_check;
         }
-
-        /* ── Redo ^Y ── */
-        if (ch == 25) {
-            if (redo_do(&us, &lb, &row, &col)) {
-                modified = 1;
+        if (ch == 25) {   /* ^Y redo */
+            if (redo_do(&t->us, &t->lb, &t->row, &t->col)) {
+                t->modified = 1;
                 snprintf(status_msg, sizeof(status_msg), "Redo");
             } else {
                 snprintf(status_msg, sizeof(status_msg), "Nothing to redo");
             }
-            sticky_col = col;
+            t->sticky_col = t->col;
             goto scroll_check;
         }
 
-        /* ── Find ^F ── */
-        if (ch == 6) {
+        /* ══ Search / Navigation ═════════════════════════════════════════════ */
+
+        if (ch == 6) {   /* ^F find */
             char query[256] = "";
             echo();
             mvhline(LINES-1, 0, ' ', max_col);
@@ -780,31 +1120,30 @@ void nanoEditor(const char *filename) {
             }
             int found = 0;
             for (int pass = 0; pass < 2 && !found; pass++) {
-                int s = (pass == 0) ? row       : 0;
-                int e = (pass == 0) ? lb.count  : row + 1;
+                int s = (pass == 0) ? t->row      : 0;
+                int e = (pass == 0) ? t->lb.count : t->row + 1;
                 for (int i = s; i < e && !found; i++) {
-                    int llen      = (int)strlen(lb.data[i]);
-                    int start_col = (i == row && pass == 0) ? col+1 : 0;
+                    int llen      = (int)strlen(t->lb.data[i]);
+                    int start_col = (i == t->row && pass == 0) ? t->col+1 : 0;
                     if (start_col > llen) continue;
-                    char *p = strstr(lb.data[i] + start_col, query);
+                    char *p = strstr(t->lb.data[i] + start_col, query);
                     if (p) {
-                        row = i;
-                        col = (int)(p - lb.data[i]);
-                        sticky_col = col;
+                        t->row = i;
+                        t->col = (int)(p - t->lb.data[i]);
+                        t->sticky_col = t->col;
                         snprintf(status_msg, sizeof(status_msg),
-                                 "Found: Ln %d Col %d", row+1, col+1);
+                                 "Found: Ln %d Col %d", t->row+1, t->col+1);
                         found = 1;
                     }
                 }
             }
             if (!found)
                 snprintf(status_msg, sizeof(status_msg),
-                         "Not found: %s", query);
+                         "Not found: %.200s", query);
             goto scroll_check;
         }
 
-        /* ── Goto line ^G ── */
-        if (ch == 7) {
+        if (ch == 7) {   /* ^G goto line */
             char buf[32] = "";
             echo();
             mvhline(LINES-1, 0, ' ', max_col);
@@ -813,290 +1152,302 @@ void nanoEditor(const char *filename) {
             mvgetnstr(LINES-1, 11, buf, (int)sizeof(buf)-1);
             noecho();
             int target = atoi(buf);
-            if (target < 1 || target > lb.count) {
+            if (target < 1 || target > t->lb.count) {
                 snprintf(status_msg, sizeof(status_msg), "Invalid: %s", buf);
                 continue;
             }
-            row = target - 1;
-            int llen = (int)strlen(lb.data[row]);
-            if (col > llen) col = llen;
-            sticky_col = col;
+            t->row = target - 1;
+            int llen = (int)strlen(t->lb.data[t->row]);
+            if (t->col > llen) t->col = llen;
+            t->sticky_col = t->col;
             snprintf(status_msg, sizeof(status_msg),
                      "Jumped to line %d", target);
             goto scroll_check;
         }
 
-        /* ── Smart Home  ^A or KEY_HOME ── */
+        /* ══ Smart Home ══════════════════════════════════════════════════════ */
+
         if (ch == 1 || ch == KEY_HOME) {
-            const char *l    = lb.data[row];
-            int   llen       = (int)strlen(l);
-            int   first_nws  = 0;
+            const char *l   = t->lb.data[t->row];
+            int llen        = (int)strlen(l);
+            int first_nws   = 0;
             while (first_nws < llen &&
                    (l[first_nws] == ' ' || l[first_nws] == '\t'))
                 first_nws++;
             if (first_nws == llen) first_nws = 0;
             int target;
-            if (last_home_row == row &&
-                last_home_col_nws == first_nws &&
-                col == first_nws)
+            if (t->last_home_row == t->row &&
+                t->last_home_col_nws == first_nws &&
+                t->col == first_nws)
                 target = 0;
             else
-                target = (col == first_nws) ? 0 : first_nws;
-            last_home_row     = row;
-            last_home_col_nws = first_nws;
-            col = sticky_col = target;
+                target = (t->col == first_nws) ? 0 : first_nws;
+            t->last_home_row     = t->row;
+            t->last_home_col_nws = first_nws;
+            t->col = t->sticky_col = target;
             goto scroll_check;
         }
 
-        /* ── Kill line ^K ── */
-        if (ch == 11) {
-            free(cut_buffer);
-            int llen = (int)strlen(lb.data[row]);
-            if (llen == 0 && lb.count > 1) {
-                /* Remove the empty line. */
-                cut_buffer = safe_strdup("");
-                free(lb.data[row]);
-                for (int i = row; i < lb.count - 1; i++)
-                    lb.data[i] = lb.data[i+1];
-                lb.count--;
-                if (row >= lb.count) row = lb.count - 1;
+        /* ══ Cut / Paste ═════════════════════════════════════════════════════ */
+
+        if (ch == 11) {   /* ^K cut line */
+            free(t->cut_buffer);
+            int llen = (int)strlen(t->lb.data[t->row]);
+            if (llen == 0 && t->lb.count > 1) {
+                t->cut_buffer = safe_strdup("");
+                free(t->lb.data[t->row]);
+                for (int i = t->row; i < t->lb.count - 1; i++)
+                    t->lb.data[i] = t->lb.data[i+1];
+                t->lb.count--;
+                if (t->row >= t->lb.count) t->row = t->lb.count - 1;
             } else if (llen == 0) {
-                cut_buffer = safe_strdup("");
+                t->cut_buffer = safe_strdup("");
             } else {
-                cut_buffer = safe_strdup(lb.data[row]);
-                if (lb.count > 1) {
-                    free(lb.data[row]);
-                    for (int i = row; i < lb.count - 1; i++)
-                        lb.data[i] = lb.data[i+1];
-                    lb.count--;
-                    if (row >= lb.count) row = lb.count - 1;
+                t->cut_buffer = safe_strdup(t->lb.data[t->row]);
+                if (t->lb.count > 1) {
+                    free(t->lb.data[t->row]);
+                    for (int i = t->row; i < t->lb.count - 1; i++)
+                        t->lb.data[i] = t->lb.data[i+1];
+                    t->lb.count--;
+                    if (t->row >= t->lb.count) t->row = t->lb.count - 1;
                 } else {
-                    lb.data[row][0] = '\0';
+                    t->lb.data[t->row][0] = '\0';
                 }
             }
-            col = sticky_col = 0;
-            modified = 1;
-            PUSH_UNDO();
+            t->col = t->sticky_col = 0;
+            t->modified = 1;
+            TPUSH();
             snprintf(status_msg, sizeof(status_msg), "Line cut");
             goto scroll_check;
         }
 
-        /* ── Paste ^U ── */
-        if (ch == 21) {
-            if (!cut_buffer) {
+        if (ch == 21) {   /* ^U paste */
+            if (!t->cut_buffer) {
                 snprintf(status_msg, sizeof(status_msg), "Nothing to paste");
                 continue;
             }
-            lb_ensure(&lb, lb.count + 2);
-            for (int i = lb.count; i > row; i--)
-                lb.data[i] = lb.data[i-1];
-            lb.data[row] = safe_strdup(cut_buffer);
-            lb.count++;
-            row++;
-            col = sticky_col = 0;
-            modified = 1;
-            PUSH_UNDO();
+            lb_ensure(&t->lb, t->lb.count + 2);
+            for (int i = t->lb.count; i > t->row; i--)
+                t->lb.data[i] = t->lb.data[i-1];
+            t->lb.data[t->row] = safe_strdup(t->cut_buffer);
+            t->lb.count++;
+            t->row++;
+            t->col = t->sticky_col = 0;
+            t->modified = 1;
+            TPUSH();
             snprintf(status_msg, sizeof(status_msg), "Pasted");
             goto scroll_check;
         }
 
-        /* ── Word jump Ctrl+Right / Ctrl+Left ── */
+        /* ══ Word jump ═══════════════════════════════════════════════════════ */
+
         if (ch == KEY_SRIGHT) {
-            word_jump_right(&lb, &row, &col);
-            sticky_col = col;
+            word_jump_right(&t->lb, &t->row, &t->col);
+            t->sticky_col = t->col;
             goto scroll_check;
         }
         if (ch == KEY_SLEFT) {
-            word_jump_left(&lb, &row, &col);
-            sticky_col = col;
+            word_jump_left(&t->lb, &t->row, &t->col);
+            t->sticky_col = t->col;
             goto scroll_check;
         }
 
-        /* ── Navigation & editing ── */
+        /* ══ Navigation & text editing ═══════════════════════════════════════ */
+
         switch (ch) {
 
         case KEY_UP:
-            if (row > 0) {
-                row--;
-                int llen = (int)strlen(lb.data[row]);
-                col = sticky_col < llen ? sticky_col : llen;
+            if (t->row > 0) {
+                t->row--;
+                int llen = (int)strlen(t->lb.data[t->row]);
+                t->col = t->sticky_col < llen ? t->sticky_col : llen;
             }
             break;
         case KEY_DOWN:
-            if (row < lb.count - 1) {
-                row++;
-                int llen = (int)strlen(lb.data[row]);
-                col = sticky_col < llen ? sticky_col : llen;
+            if (t->row < t->lb.count - 1) {
+                t->row++;
+                int llen = (int)strlen(t->lb.data[t->row]);
+                t->col = t->sticky_col < llen ? t->sticky_col : llen;
             }
             break;
         case KEY_LEFT:
-            if (col > 0) { col--; sticky_col = col; }
-            else if (row > 0) {
-                row--;
-                col = sticky_col = (int)strlen(lb.data[row]);
+            if (t->col > 0) { t->col--; t->sticky_col = t->col; }
+            else if (t->row > 0) {
+                t->row--;
+                t->col = t->sticky_col = (int)strlen(t->lb.data[t->row]);
             }
             break;
         case KEY_RIGHT: {
-            int llen = (int)strlen(lb.data[row]);
-            if (col < llen) { col++; sticky_col = col; }
-            else if (row < lb.count - 1) { row++; col = sticky_col = 0; }
+            int llen = (int)strlen(t->lb.data[t->row]);
+            if (t->col < llen) { t->col++; t->sticky_col = t->col; }
+            else if (t->row < t->lb.count - 1)
+                { t->row++; t->col = t->sticky_col = 0; }
             break;
         }
         case KEY_END:
-            col = sticky_col = (int)strlen(lb.data[row]);
+            t->col = t->sticky_col = (int)strlen(t->lb.data[t->row]);
             break;
         case KEY_PPAGE:
-            row = (row - (max_row-2) > 0) ? row - (max_row-2) : 0;
-            { int llen=(int)strlen(lb.data[row]);
-              if (col>llen) col=llen;
-              sticky_col=col; }
+            t->row = (t->row - (max_row-3) > 0) ? t->row - (max_row-3) : 0;
+            { int llen = (int)strlen(t->lb.data[t->row]);
+              if (t->col > llen) t->col = llen;
+              t->sticky_col = t->col; }
             break;
         case KEY_NPAGE:
-            row = (row + (max_row-2) < lb.count-1) ?
-                   row + (max_row-2) : lb.count-1;
-            { int llen=(int)strlen(lb.data[row]);
-              if (col>llen) col=llen;
-              sticky_col=col; }
+            t->row = (t->row + (max_row-3) < t->lb.count-1)
+                   ? t->row + (max_row-3) : t->lb.count-1;
+            { int llen = (int)strlen(t->lb.data[t->row]);
+              if (t->col > llen) t->col = llen;
+              t->sticky_col = t->col; }
             break;
 
         /* ── Backspace ── */
         case 8: case 127: case KEY_BACKSPACE:
-            if (col > 0) {
-                size_t cur_len = strlen(lb.data[row]);
-                memmove(&lb.data[row][col-1], &lb.data[row][col],
-                        cur_len - col + 1);
-                col--;
-                modified = 1;
-                PUSH_UNDO();
-            } else if (row > 0) {
-                int    prev_len = (int)strlen(lb.data[row-1]);
-                size_t newlen   = prev_len + strlen(lb.data[row]) + 1;
-                char  *merged   = safe_realloc(lb.data[row-1], newlen);
-                lb.data[row-1]  = merged;
-                strcat(lb.data[row-1], lb.data[row]);
-                free(lb.data[row]);
-                for (int i = row; i < lb.count-1; i++)
-                    lb.data[i] = lb.data[i+1];
-                lb.count--;
-                row--;
-                col = prev_len;
-                modified = 1;
-                PUSH_UNDO();
+            if (t->col > 0) {
+                size_t cur_len = strlen(t->lb.data[t->row]);
+                memmove(&t->lb.data[t->row][t->col-1],
+                        &t->lb.data[t->row][t->col],
+                        cur_len - t->col + 1);
+                t->col--;
+                t->modified = 1;
+                TPUSH();
+            } else if (t->row > 0) {
+                int    prev_len = (int)strlen(t->lb.data[t->row-1]);
+                size_t newlen   = prev_len + strlen(t->lb.data[t->row]) + 1;
+                char  *merged   = safe_realloc(t->lb.data[t->row-1], newlen);
+                t->lb.data[t->row-1] = merged;
+                strcat(t->lb.data[t->row-1], t->lb.data[t->row]);
+                free(t->lb.data[t->row]);
+                for (int i = t->row; i < t->lb.count-1; i++)
+                    t->lb.data[i] = t->lb.data[i+1];
+                t->lb.count--;
+                t->row--;
+                t->col = prev_len;
+                t->modified = 1;
+                TPUSH();
             }
-            sticky_col = col;
+            t->sticky_col = t->col;
             break;
 
-        /* ── Delete key ── */
+        /* ── Delete ── */
         case KEY_DC: {
-            int llen = (int)strlen(lb.data[row]);
-            if (col < llen) {
-                memmove(&lb.data[row][col], &lb.data[row][col+1], llen-col);
-                modified = 1;
-                PUSH_UNDO();
-            } else if (row < lb.count-1) {
-                size_t newlen = llen + strlen(lb.data[row+1]) + 1;
-                char  *merged = safe_realloc(lb.data[row], newlen);
-                lb.data[row]  = merged;
-                strcat(lb.data[row], lb.data[row+1]);
-                free(lb.data[row+1]);
-                for (int i = row+1; i < lb.count-1; i++)
-                    lb.data[i] = lb.data[i+1];
-                lb.count--;
-                modified = 1;
-                PUSH_UNDO();
+            int llen = (int)strlen(t->lb.data[t->row]);
+            if (t->col < llen) {
+                memmove(&t->lb.data[t->row][t->col],
+                        &t->lb.data[t->row][t->col+1],
+                        llen - t->col);
+                t->modified = 1;
+                TPUSH();
+            } else if (t->row < t->lb.count-1) {
+                size_t newlen = llen + strlen(t->lb.data[t->row+1]) + 1;
+                char  *merged = safe_realloc(t->lb.data[t->row], newlen);
+                t->lb.data[t->row] = merged;
+                strcat(t->lb.data[t->row], t->lb.data[t->row+1]);
+                free(t->lb.data[t->row+1]);
+                for (int i = t->row+1; i < t->lb.count-1; i++)
+                    t->lb.data[i] = t->lb.data[i+1];
+                t->lb.count--;
+                t->modified = 1;
+                TPUSH();
             }
-            sticky_col = col;
+            t->sticky_col = t->col;
             break;
         }
 
-        /* ── Enter (with auto-indent) ── */
+        /* ── Enter with auto-indent ── */
         case '\n': case '\r': case KEY_ENTER: {
-            /* Copy leading whitespace from current line (up to col). */
-            const char *cur  = lb.data[row];
-            int   indent     = 0;
-            int   cur_len    = (int)strlen(cur);
-            while (indent < col && indent < cur_len &&
+            const char *cur = t->lb.data[t->row];
+            int indent  = 0;
+            int cur_len = (int)strlen(cur);
+            while (indent < t->col && indent < cur_len &&
                    (cur[indent] == ' ' || cur[indent] == '\t'))
                 indent++;
-
-            char *tail     = safe_strdup(cur + col);
+            char *tail     = safe_strdup(cur + t->col);
             char *new_next = safe_malloc(indent + strlen(tail) + 1);
             memcpy(new_next, cur, indent);
             strcpy(new_next + indent, tail);
             free(tail);
-
-            lb.data[row][col] = '\0';
-            lb_ensure(&lb, lb.count + 2);
-            for (int i = lb.count; i > row + 1; i--)
-                lb.data[i] = lb.data[i-1];
-            lb.data[row+1] = new_next;
-            lb.count++;
-            row++;
-            col = sticky_col = indent;
-            modified = 1;
-            PUSH_UNDO();
+            t->lb.data[t->row][t->col] = '\0';
+            lb_ensure(&t->lb, t->lb.count + 2);
+            for (int i = t->lb.count; i > t->row + 1; i--)
+                t->lb.data[i] = t->lb.data[i-1];
+            t->lb.data[t->row+1] = new_next;
+            t->lb.count++;
+            t->row++;
+            t->col = t->sticky_col = indent;
+            t->modified = 1;
+            TPUSH();
             break;
         }
 
         /* ── Tab ── */
         case '\t': {
-            int   llen = (int)strlen(lb.data[row]);
+            int   llen = (int)strlen(t->lb.data[t->row]);
             char *nl   = safe_malloc(llen + 2);
-            if (col > 0) memcpy(nl, lb.data[row], col);
-            nl[col] = '\t';
-            memcpy(nl + col + 1, lb.data[row] + col, llen - col + 1);
-            free(lb.data[row]);
-            lb.data[row] = nl;
-            col++; sticky_col = col;
-            modified = 1;
-            PUSH_UNDO();
+            if (t->col > 0) memcpy(nl, t->lb.data[t->row], t->col);
+            nl[t->col] = '\t';
+            memcpy(nl + t->col + 1, t->lb.data[t->row] + t->col,
+                   llen - t->col + 1);
+            free(t->lb.data[t->row]);
+            t->lb.data[t->row] = nl;
+            t->col++; t->sticky_col = t->col;
+            t->modified = 1;
+            TPUSH();
             break;
         }
 
         /* ── Printable character ── */
         default:
             if (ch >= 32 && ch <= 126) {
-                int   llen = (int)strlen(lb.data[row]);
+                int   llen = (int)strlen(t->lb.data[t->row]);
                 char *nl   = safe_malloc(llen + 2);
-                if (col > 0) memcpy(nl, lb.data[row], col);
-                nl[col] = (char)ch;
-                memcpy(nl + col + 1, lb.data[row] + col, llen - col + 1);
-                free(lb.data[row]);
-                lb.data[row] = nl;
-                col++; sticky_col = col;
-                modified = 1;
-                PUSH_UNDO();
+                if (t->col > 0) memcpy(nl, t->lb.data[t->row], t->col);
+                nl[t->col] = (char)ch;
+                memcpy(nl + t->col + 1, t->lb.data[t->row] + t->col,
+                       llen - t->col + 1);
+                free(t->lb.data[t->row]);
+                t->lb.data[t->row] = nl;
+                t->col++; t->sticky_col = t->col;
+                t->modified = 1;
+                TPUSH();
             }
             break;
         }
 
 scroll_check:
-        /* Vertical scroll */
-        if (row < scroll_row) scroll_row = row;
-        else if (row - scroll_row >= max_row - 1)
-            scroll_row = row - (max_row - 2);
-        if (scroll_row < 0) scroll_row = 0;
-
-        /* Horizontal scroll (display columns, accounts for tabs). */
+        /* Vertical scroll: keep cursor inside the content area. */
         {
-            int dcol   = byte_to_display_col(lb.data[row], col);
+            int visible_rows = content_bot - content_top + 1;
+            if (t->row < t->scroll_row)
+                t->scroll_row = t->row;
+            else if (t->row - t->scroll_row >= visible_rows - 1)
+                t->scroll_row = t->row - (visible_rows - 2);
+            if (t->scroll_row < 0) t->scroll_row = 0;
+        }
+
+        /* Horizontal scroll: keep cursor visible within pane width. */
+        {
+            int dcol   = byte_to_display_col(t->lb.data[t->row], t->col);
             int sc     = LINE_NUM_W + dcol;
-            if (sc - scroll_col < LINE_NUM_W) {
-                scroll_col = sc - LINE_NUM_W;
-                if (scroll_col < 0) scroll_col = 0;
+            int pane_w = (split_on && tab_count > 1)
+                       ? ((split_focus == 1) ? (max_col - split_col - 1) : split_col)
+                       : max_col;
+            if (sc - t->scroll_col < LINE_NUM_W) {
+                t->scroll_col = sc - LINE_NUM_W;
+                if (t->scroll_col < 0) t->scroll_col = 0;
             }
-            if (sc - scroll_col >= max_col - 1) {
-                scroll_col = sc - (max_col - 2);
-                if (scroll_col < 0) scroll_col = 0;
+            if (sc - t->scroll_col >= pane_w - 1) {
+                t->scroll_col = sc - (pane_w - 2);
+                if (t->scroll_col < 0) t->scroll_col = 0;
             }
         }
     }
 
-    delwin(pad);
+    delwin(pad_left);
+    delwin(pad_right);
     endwin();
-    free(cut_buffer);
-    undo_free(&us);
-    lb_free(&lb);
+    for (int i = 0; i < tab_count; i++)
+        tab_free(&tabs[i]);
 }
 
 /* ─── Main ───────────────────────────────────────────────────────────────── */
@@ -1124,6 +1475,6 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    nanoEditor(argv[1]);
+    runEditor(argv[1]);
     return 0;
 }

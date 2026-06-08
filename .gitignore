@@ -1,0 +1,6 @@
+# Build artifacts
+quill
+src/editor.o
+src/prog
+*.o
+*.a
